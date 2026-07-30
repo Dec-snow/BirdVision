@@ -1,0 +1,498 @@
+{% extends 'base.html' %}
+
+{% block title %}首页 - BirdVision{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ========== 首页专属样式 ========== */
+
+    /* --- Hero 区域 --- */
+    .page-home .hero-section {
+        background: linear-gradient(160deg, #0a1f10 0%, #1B5E20 30%, #2D8C4E 70%, #43A047 100%);
+        color: #ffffff;
+        text-align: center;
+        padding: 5rem 2rem 4.5rem;
+        border-radius: 20px;
+        margin-bottom: 3.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Hero 网格纹理背景 */
+    .page-home .hero-section::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+        background-size: 30px 30px;
+        pointer-events: none;
+    }
+
+    /* Hero 光晕装饰 */
+    .page-home .hero-glow {
+        position: absolute;
+        width: 400px;
+        height: 400px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(102,187,106,0.25) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .page-home .hero-glow-1 {
+        top: -150px;
+        right: -100px;
+    }
+
+    .page-home .hero-glow-2 {
+        bottom: -200px;
+        left: -100px;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+    }
+
+    /* Hero 右上角飞鸟剪影 SVG 装饰 */
+    .page-home .hero-bird-silhouette {
+        position: absolute;
+        top: 20px;
+        right: 30px;
+        opacity: 0.12;
+        width: 200px;
+        height: 130px;
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    .page-home .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.15);
+        backdrop-filter: blur(8px);
+        padding: 0.4rem 1rem;
+        border-radius: 50px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        margin-bottom: 1.5rem;
+        position: relative;
+        z-index: 1;
+        letter-spacing: 0.3px;
+    }
+
+    .page-home .hero-badge i {
+        font-size: 0.7rem;
+    }
+
+    .page-home .hero-title {
+        font-size: 2.8rem;
+        font-weight: 800;
+        margin-bottom: 1.25rem;
+        position: relative;
+        z-index: 1;
+        letter-spacing: -0.5px;
+        line-height: 1.2;
+    }
+
+    .page-home .hero-subtitle {
+        font-size: 1.1rem;
+        opacity: 0.85;
+        margin-bottom: 2.5rem;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+        position: relative;
+        z-index: 1;
+        line-height: 1.7;
+        font-weight: 400;
+    }
+
+    .page-home .hero-actions {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        position: relative;
+        z-index: 1;
+        flex-wrap: wrap;
+    }
+
+    .page-home .hero-btn {
+        font-weight: 600;
+        font-size: 1rem;
+        padding: 0.8rem 2rem;
+        border-radius: 12px;
+        border: none;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .page-home .hero-btn-primary {
+        background-color: #ffffff;
+        color: #1B5E20;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
+
+    .page-home .hero-btn-primary:hover {
+        background-color: #E8F5E9;
+        color: #1B5E20;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+
+    .page-home .hero-btn-outline {
+        background: transparent;
+        color: rgba(255,255,255,0.9);
+        border: 1.5px solid rgba(255,255,255,0.3);
+    }
+
+    .page-home .hero-btn-outline:hover {
+        background: rgba(255,255,255,0.1);
+        color: #ffffff;
+        border-color: rgba(255,255,255,0.5);
+        transform: translateY(-2px);
+    }
+
+    /* --- 统计数字条 --- */
+    .page-home .hero-stats {
+        display: flex;
+        justify-content: center;
+        gap: 3rem;
+        margin-top: 3rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .page-home .hero-stat-item {
+        text-align: center;
+    }
+
+    .page-home .hero-stat-number {
+        font-size: 1.6rem;
+        font-weight: 700;
+        display: block;
+    }
+
+    .page-home .hero-stat-label {
+        font-size: 0.78rem;
+        opacity: 0.6;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 2px;
+    }
+
+    /* --- 特色卡片 --- */
+    .page-home .feature-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 2rem 1.5rem;
+        text-align: left;
+        transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .page-home .feature-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 16px 40px rgba(45, 140, 78, 0.12);
+    }
+
+    /* 卡片顶部彩色条 */
+    .page-home .feature-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+    }
+
+    .page-home .feature-card.card-1::before {
+        background: linear-gradient(90deg, #2D8C4E, #66BB6A);
+    }
+
+    .page-home .feature-card.card-2::before {
+        background: linear-gradient(90deg, #0D6EFD, #60A5FA);
+    }
+
+    .page-home .feature-card.card-3::before {
+        background: linear-gradient(90deg, #F59E0B, #FBBF24);
+    }
+
+    .page-home .feature-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.25rem;
+        font-size: 1.4rem;
+        transition: transform 0.4s ease;
+    }
+
+    .page-home .feature-card.card-1 .feature-icon {
+        background: linear-gradient(135deg, #E8F5E9, #C8E6C9);
+        color: #2D8C4E;
+    }
+
+    .page-home .feature-card.card-2 .feature-icon {
+        background: linear-gradient(135deg, #E3F2FD, #BBDEFB);
+        color: #0D6EFD;
+    }
+
+    .page-home .feature-card.card-3 .feature-icon {
+        background: linear-gradient(135deg, #FEF3C7, #FDE68A);
+        color: #D97706;
+    }
+
+    .page-home .feature-card:hover .feature-icon {
+        transform: scale(1.1);
+    }
+
+    .page-home .feature-card h5 {
+        font-weight: 700;
+        margin-bottom: 0.6rem;
+        color: #1a1a2e;
+        font-size: 1.1rem;
+    }
+
+    .page-home .feature-card p {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+        line-height: 1.7;
+    }
+
+    /* --- 技术栈标签 --- */
+    .page-home .tech-section {
+        text-align: center;
+        margin-top: 3.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .page-home .tech-section h6 {
+        color: #adb5bd;
+        font-weight: 600;
+        margin-bottom: 1.25rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-size: 0.78rem;
+    }
+
+    .page-home .tech-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #ffffff;
+        border: 1px solid #e8e8e8;
+        color: #495057;
+        padding: 0.5rem 1.1rem;
+        border-radius: 10px;
+        font-size: 0.88rem;
+        font-weight: 500;
+        margin: 0.25rem;
+        transition: all 0.25s ease;
+    }
+
+    .page-home .tech-badge:hover {
+        border-color: var(--bv-primary);
+        color: var(--bv-primary);
+        background: var(--bv-primary-light);
+        transform: translateY(-2px);
+    }
+
+    .page-home .tech-badge i {
+        font-size: 1rem;
+    }
+
+    /* --- 区块标题 --- */
+    .page-home .section-title {
+        text-align: center;
+        margin-bottom: 2.5rem;
+    }
+
+    .page-home .section-title h3 {
+        font-weight: 800;
+        color: #1a1a2e;
+        font-size: 1.6rem;
+        letter-spacing: -0.3px;
+    }
+
+    .page-home .section-title p {
+        color: #6c757d;
+        margin-top: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    /* --- 功能入口区域 --- */
+    .page-home .cta-section {
+        margin-top: 3.5rem;
+        background: linear-gradient(160deg, #f0f9f0 0%, #e8f5e9 100%);
+        border-radius: 20px;
+        padding: 3rem 2rem;
+        text-align: center;
+        border: 1px solid rgba(45,140,78,0.1);
+    }
+
+    .page-home .cta-section h4 {
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 0.75rem;
+    }
+
+    .page-home .cta-section p {
+        color: #6c757d;
+        margin-bottom: 1.5rem;
+    }
+
+    .page-home .cta-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: linear-gradient(135deg, #2D8C4E, #43A047);
+        color: #ffffff;
+        font-weight: 600;
+        font-size: 1rem;
+        padding: 0.8rem 2rem;
+        border-radius: 12px;
+        border: none;
+        text-decoration: none;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        box-shadow: 0 4px 15px rgba(45,140,78,0.3);
+    }
+
+    .page-home .cta-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(45,140,78,0.4);
+        color: #ffffff;
+    }
+
+    /* --- 响应式 --- */
+    @media (max-width: 768px) {
+        .page-home .hero-title { font-size: 2rem; }
+        .page-home .hero-stats { gap: 1.5rem; }
+        .page-home .hero-stat-number { font-size: 1.3rem; }
+        .page-home .hero-section { padding: 3.5rem 1.5rem 3rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-home">
+
+    <!-- ========== Hero 区域 ========== -->
+    <div class="hero-section">
+        <!-- 光晕装饰 -->
+        <div class="hero-glow hero-glow-1"></div>
+        <div class="hero-glow hero-glow-2"></div>
+
+        <!-- 右上角飞鸟剪影 SVG 装饰 -->
+        <svg class="hero-bird-silhouette" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 80 Q40 30 80 60 Q100 45 120 55 Q140 30 180 50 Q190 48 195 52"
+                  fill="none" stroke="white" stroke-width="6" stroke-linecap="round"/>
+            <path d="M50 85 Q90 50 130 70 Q150 55 170 65 Q180 60 190 63"
+                  fill="none" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+        </svg>
+
+        <div class="hero-badge">
+            <i class="fa-solid fa-circle"></i>
+            AI 驱动的鸟类识别平台
+        </div>
+
+        <h1 class="hero-title">智能鸟类识别<br>与生态知识百科</h1>
+        <p class="hero-subtitle">基于 YOLOv11 深度学习目标检测与大语言模型，只需一张照片，即可精准识别鸟类物种并获取详细的生态知识。</p>
+
+        <div class="hero-actions">
+            <a href="/detect" class="hero-btn hero-btn-primary">
+                <i class="fa-solid fa-camera"></i>开始识别
+            </a>
+            <a href="/species" class="hero-btn hero-btn-outline">
+                <i class="fa-solid fa-book-open"></i>浏览百科
+            </a>
+        </div>
+
+        <div class="hero-stats">
+            <div class="hero-stat-item">
+                <span class="hero-stat-number">100+</span>
+                <span class="hero-stat-label">鸟类物种</span>
+            </div>
+            <div class="hero-stat-item">
+                <span class="hero-stat-number">AI</span>
+                <span class="hero-stat-label">智能识别</span>
+            </div>
+            <div class="hero-stat-item">
+                <span class="hero-stat-number">24/7</span>
+                <span class="hero-stat-label">在线服务</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 特色功能卡片 ========== -->
+    <div class="section-title">
+        <h3>核心功能</h3>
+        <p>融合深度学习与自然语言处理，为您提供全方位的鸟类知识服务</p>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- 精准识别 -->
+        <div class="col-md-4">
+            <div class="feature-card card-1">
+                <div class="feature-icon">
+                    <i class="fa-solid fa-crosshairs"></i>
+                </div>
+                <h5>精准识别</h5>
+                <p>基于 YOLOv11 深度学习模型，支持数百种鸟类品种的快速、精准识别，置信度可视化呈现。</p>
+            </div>
+        </div>
+        <!-- 智能问答 -->
+        <div class="col-md-4">
+            <div class="feature-card card-2">
+                <div class="feature-icon">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <h5>智能问答</h5>
+                <p>基于微调大语言模型的 AI 助手，提供专业鸟类生态知识解答，支持多轮对话与快捷提问。</p>
+            </div>
+        </div>
+        <!-- 数据统计 -->
+        <div class="col-md-4">
+            <div class="feature-card card-3">
+                <div class="feature-icon">
+                    <i class="fa-solid fa-chart-mixed"></i>
+                </div>
+                <h5>数据统计</h5>
+                <p>识别记录自动归档，通过饼图、折线图等可视化图表，直观掌握鸟类分布与识别趋势。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 技术栈展示 ========== -->
+    <div class="tech-section">
+        <h6>核心技术栈</h6>
+        <div>
+            <span class="tech-badge"><i class="fa-solid fa-bolt"></i> YOLOv11</span>
+            <span class="tech-badge"><i class="fa-brands fa-python"></i> Flask</span>
+            <span class="tech-badge"><i class="fa-solid fa-brain"></i> LLaMA Factory</span>
+            <span class="tech-badge"><i class="fa-solid fa-server"></i> Ollama</span>
+            <span class="tech-badge"><i class="fa-solid fa-chart-bar"></i> ECharts</span>
+            <span class="tech-badge"><i class="fa-solid fa-database"></i> SQLite</span>
+        </div>
+    </div>
+
+    <!-- ========== CTA 区域 ========== -->
+    <div class="cta-section">
+        <h4>开始探索鸟类世界</h4>
+        <p>上传一张鸟类照片，体验 AI 驱动的智能识别与知识问答</p>
+        <a href="/detect" class="cta-btn">
+            <i class="fa-solid fa-arrow-right"></i>立即体验
+        </a>
+    </div>
+
+</div>
+{% endblock %}

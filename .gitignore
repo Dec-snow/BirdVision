@@ -1,0 +1,137 @@
+# =========================================
+# Python
+# =========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+sdist/
+wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================================
+# 虚拟环境
+# =========================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# =========================================
+# 环境变量与密钥
+# =========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# =========================================
+# 数据库
+# =========================================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================================
+# 模型权重（大文件，建议用 Git LFS 或外部存储）
+# =========================================
+*.pt
+*.pth
+*.onnx
+*.weights
+*.bin
+*.safetensors
+*.ckpt
+*.h5
+*.tflite
+
+# =========================================
+# 数据集（体积大，不入库）
+# =========================================
+datasets/
+project/bird-vision/datasets/
+
+# =========================================
+# 训练输出与运行结果
+# =========================================
+runs/
+project/bird-vision/runs/
+wandb/
+mlruns/
+outputs/
+
+# =========================================
+# 上传文件与临时存储
+# =========================================
+.uploads/
+project/.uploads/
+app/static/uploads/*
+project/bird-vision/app/static/uploads/*
+!app/static/uploads/.gitkeep
+!project/bird-vision/app/static/uploads/.gitkeep
+
+# =========================================
+# 日志
+# =========================================
+*.log
+logs/
+*.out
+
+# =========================================
+# IDE / 编辑器
+# =========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# =========================================
+# Claude / AI 助手本地配置
+# =========================================
+.claude/settings.local.json
+project/.claude/settings.local.json
+
+# =========================================
+# 操作系统生成文件
+# =========================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# =========================================
+# Node.js（如有前端依赖）
+# =========================================
+node_modules/
+package-lock.json
+
+# =========================================
+# Jupyter Notebook 检查点
+# =========================================
+.ipynb_checkpoints/

@@ -1,0 +1,571 @@
+{% extends "base.html" %}
+
+{% block title %}鸟类物种百科 - BirdVision{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ========== 搜索框样式 ========== */
+    .search-bar {
+        max-width: 520px;
+        margin: 0 auto 2.5rem;
+        position: relative;
+    }
+    .search-bar input {
+        border-radius: 14px;
+        padding: 0.8rem 1.2rem 0.8rem 3rem;
+        border: 1.5px solid #e0e0e0;
+        font-size: 0.95rem;
+        transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+        background-color: #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        width: 100%;
+    }
+    .search-bar input:focus {
+        border-color: var(--bv-primary);
+        box-shadow: 0 0 0 3px rgba(45, 140, 78, 0.12), 0 4px 12px rgba(0,0,0,0.06);
+        outline: none;
+    }
+    .search-bar .search-icon {
+        position: absolute;
+        left: 1.1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #adb5bd;
+        font-size: 0.95rem;
+        pointer-events: none;
+    }
+    .search-bar .search-btn {
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: linear-gradient(135deg, var(--bv-primary), #43A047);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 1.2rem;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .search-bar .search-btn:hover {
+        background: linear-gradient(135deg, var(--bv-primary-dark), var(--bv-primary));
+        transform: translateY(-50%) scale(1.02);
+    }
+
+    /* ========== 物种卡片样式 ========== */
+    .species-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid rgba(0,0,0,0.06);
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        cursor: pointer;
+    }
+    .species-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.1);
+        border-color: var(--bv-primary);
+    }
+    .species-card .name-cn {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 0.25rem;
+    }
+    .species-card .scientific-name {
+        font-size: 0.8rem;
+        color: #adb5bd;
+        font-style: italic;
+        margin-bottom: 0.25rem;
+    }
+    .species-card .name-en {
+        font-size: 0.85rem;
+        color: #adb5bd;
+        margin-bottom: 0.75rem;
+        font-style: italic;
+    }
+    .species-card .family-info {
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-bottom: 0.75rem;
+    }
+    .species-card .family-info i {
+        color: var(--bv-primary);
+        margin-right: 4px;
+    }
+    .species-card .description-preview {
+        font-size: 0.85rem;
+        color: #555;
+        line-height: 1.7;
+        margin-bottom: 0.75rem;
+        flex-grow: 1;
+    }
+    .species-card .habitat {
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-top: auto;
+        line-height: 1.6;
+    }
+    .species-card .habitat i {
+        color: var(--bv-primary);
+        margin-right: 4px;
+    }
+    .species-card .detail-btn {
+        margin-top: 0.75rem;
+        font-size: 0.82rem;
+        color: var(--bv-primary);
+        font-weight: 600;
+        text-align: right;
+        transition: color 0.2s;
+    }
+    .species-card:hover .detail-btn {
+        color: var(--bv-primary-dark);
+    }
+
+    /* ========== 保护状态标签 ========== */
+    .conservation-tag {
+        display: inline-block;
+        padding: 0.2rem 0.65rem;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+    }
+    .tag-level-1 { background-color: #fdecea; color: #c0392b; }
+    .tag-level-2 { background-color: #fef5e7; color: #e67e22; }
+    .tag-level-3 { background-color: #e8f5e9; color: #2d8c4e; }
+    .tag-none { background-color: #f0f0f0; color: #999; }
+
+    /* ========== 加载 / 无结果提示 ========== */
+    .loading-text {
+        text-align: center;
+        color: var(--bv-text-muted);
+        padding: 3rem 0;
+    }
+    .no-result {
+        text-align: center;
+        color: var(--bv-text-muted);
+        padding: 3rem 0;
+        display: none;
+    }
+    .species-count {
+        text-align: center;
+        color: #6c757d;
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    /* ========== 页面标题 ========== */
+    .page-title {
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .page-title h2 {
+        font-weight: 800;
+        color: #1a1a2e;
+        margin-bottom: 0.5rem;
+        font-size: 1.6rem;
+        letter-spacing: -0.3px;
+    }
+    .page-title p {
+        color: #6c757d;
+        font-size: 0.95rem;
+    }
+
+    /* ========== 列表视图 / 详情视图 切换 ========== */
+    .list-view, .detail-view {
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .list-view.hidden, .detail-view.hidden {
+        display: none;
+    }
+    /* 列表 → 详情：列表左移淡出，详情从右淡入 */
+    .list-view.slide-out {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    .detail-view.slide-in {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    /* 详情 → 列表：详情右移淡出，列表从左淡入 */
+    .detail-view.slide-out {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    .list-view.slide-in {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+
+    /* ========== 详情页样式 ========== */
+    .detail-container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 20px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        overflow: hidden;
+    }
+    .detail-back-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.2rem;
+        background: #f0f7f2;
+        color: var(--bv-primary);
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-bottom: 1.5rem;
+    }
+    .detail-back-btn:hover {
+        background: #e2f0e6;
+        transform: translateX(-2px);
+    }
+    .detail-header {
+        background: linear-gradient(135deg, var(--bv-primary), #43A047);
+        color: #fff;
+        padding: 2.5rem;
+    }
+    .detail-header .detail-name {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 0.3rem;
+    }
+    .detail-header .detail-scientific {
+        font-size: 1rem;
+        font-style: italic;
+        opacity: 0.9;
+        margin-bottom: 0.5rem;
+    }
+    .detail-header .detail-name-en {
+        font-size: 0.9rem;
+        opacity: 0.8;
+        margin-bottom: 1rem;
+    }
+    .detail-header .conservation-tag {
+        background: rgba(255,255,255,0.2);
+        color: #fff;
+        margin-bottom: 0;
+    }
+    .detail-body {
+        padding: 2rem 2.5rem 2.5rem;
+    }
+    .detail-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px dashed #e0e0e0;
+    }
+    .detail-info-item {
+        background: #f8faf9;
+        border-radius: 12px;
+        padding: 1rem 1.2rem;
+    }
+    .detail-info-item .info-label {
+        font-size: 0.8rem;
+        color: #888;
+        margin-bottom: 0.3rem;
+    }
+    .detail-info-item .info-value {
+        font-size: 0.95rem;
+        color: #333;
+        font-weight: 600;
+    }
+    .detail-desc h4 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .detail-desc h4 i {
+        color: var(--bv-primary);
+    }
+    .detail-desc p {
+        font-size: 0.95rem;
+        color: #444;
+        line-height: 2;
+        margin: 0;
+    }
+
+    /* ========== 移动端适配 ========== */
+    @media (max-width: 768px) {
+        .detail-header { padding: 1.8rem 1.5rem; }
+        .detail-header .detail-name { font-size: 1.5rem; }
+        .detail-body { padding: 1.5rem; }
+        .detail-info-grid { grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="page-title">
+    <h2><i class="fa-solid fa-feather-pointed me-2"></i>鸟类物种百科</h2>
+    <p>浏览已收录的鸟类物种信息，点击卡片查看详细介绍</p>
+</div>
+
+<!-- ================================================== -->
+<!--  列表视图 -->
+<!-- ================================================== -->
+<div class="list-view" id="listView">
+    <!-- 搜索框 -->
+    <div class="search-bar">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input type="text" id="searchInput" class="form-control" placeholder="搜索鸟类名称、科属...">
+        <button class="search-btn" onclick="filterSpecies()">搜索</button>
+    </div>
+
+    <!-- 统计信息 -->
+    <div class="species-count" id="speciesCount"></div>
+
+    <!-- 加载提示 -->
+    <div class="loading-text" id="loadingText">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i>正在加载物种数据...
+    </div>
+
+    <!-- 无结果提示 -->
+    <div class="no-result" id="noResult">
+        <i class="fa-solid fa-dove fa-2x me-2" style="color: var(--bv-border);"></i>
+        <p>没有找到匹配的鸟类物种</p>
+    </div>
+
+    <!-- 物种卡片网格 -->
+    <div class="row" id="speciesGrid"></div>
+</div>
+
+<!-- ================================================== -->
+<!--  详情视图 -->
+<!-- ================================================== -->
+<div class="detail-view hidden" id="detailView">
+    <button class="detail-back-btn" onclick="hideDetail()">
+        <i class="fa-solid fa-arrow-left"></i>
+        <span>返回物种列表</span>
+    </button>
+    <div class="detail-container">
+        <div class="detail-header">
+            <div class="detail-name" id="detailName"></div>
+            <div class="detail-scientific" id="detailScientific"></div>
+            <div class="detail-name-en" id="detailNameEn"></div>
+            <span class="conservation-tag" id="detailTag"></span>
+        </div>
+        <div class="detail-body">
+            <div class="detail-info-grid" id="detailInfoGrid"></div>
+            <div class="detail-desc">
+                <h4><i class="fa-solid fa-book-open"></i>详细介绍</h4>
+                <p id="detailDesc"></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let allSpecies = [];
+
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/api/species')
+            .then(res => res.json())
+            .then(data => {
+                allSpecies = data.species || [];
+                renderCards(allSpecies);
+                document.getElementById('speciesCount').textContent =
+                    '共收录 ' + allSpecies.length + ' 种鸟类';
+                document.getElementById('loadingText').style.display = 'none';
+            })
+            .catch(err => {
+                console.error('加载物种数据失败:', err);
+                document.getElementById('loadingText').innerHTML =
+                    '<i class="fa-solid fa-circle-exclamation me-2"></i>数据加载失败，请刷新重试';
+            });
+
+        document.getElementById('searchInput').addEventListener('input', filterSpecies);
+
+        // ESC 键返回列表
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const detailView = document.getElementById('detailView');
+                if (!detailView.classList.contains('hidden')) {
+                    hideDetail();
+                }
+            }
+        });
+    });
+
+    function filterSpecies() {
+        const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
+        if (!keyword) {
+            renderCards(allSpecies);
+            return;
+        }
+        const filtered = allSpecies.filter(s =>
+            (s.name_cn && s.name_cn.toLowerCase().includes(keyword)) ||
+            (s.name_en && s.name_en.toLowerCase().includes(keyword)) ||
+            (s.scientific_name && s.scientific_name.toLowerCase().includes(keyword)) ||
+            (s.family && s.family.toLowerCase().includes(keyword))
+        );
+        renderCards(filtered);
+    }
+
+    function renderCards(speciesList) {
+        const grid = document.getElementById('speciesGrid');
+        const noResult = document.getElementById('noResult');
+        const count = document.getElementById('speciesCount');
+
+        count.textContent = '共收录 ' + allSpecies.length + ' 种鸟类'
+            + (speciesList.length !== allSpecies.length ? '，当前匹配 ' + speciesList.length + ' 种' : '');
+
+        if (speciesList.length === 0) {
+            grid.innerHTML = '';
+            noResult.style.display = 'block';
+            return;
+        }
+        noResult.style.display = 'none';
+
+        grid.innerHTML = speciesList.map(s => {
+            let tagHtml = '';
+            const status = (s.conservation_status || '').trim();
+            if (status && status.includes('一级')) {
+                tagHtml = '<span class="conservation-tag tag-level-1">' + escapeHtml(status) + '</span>';
+            } else if (status && status.includes('二级')) {
+                tagHtml = '<span class="conservation-tag tag-level-2">' + escapeHtml(status) + '</span>';
+            } else if (status && status.includes('三有')) {
+                tagHtml = '<span class="conservation-tag tag-level-3">' + escapeHtml(status) + '</span>';
+            } else if (status) {
+                tagHtml = '<span class="conservation-tag tag-none">' + escapeHtml(status) + '</span>';
+            }
+
+            const desc = (s.description || '暂无描述');
+            const preview = desc.length > 80 ? desc.substring(0, 80) + '…' : desc;
+
+            return `
+                <div class="col-md-4 col-lg-3 mb-2">
+                    <div class="species-card" onclick="showDetail(${s.id})">
+                        <div class="name-cn">${escapeHtml(s.name_cn || '未知')}</div>
+                        <div class="scientific-name"><i>${escapeHtml(s.scientific_name || '')}</i></div>
+                        ${tagHtml}
+                        ${s.family ? '<div class="family-info"><i class="fa-solid fa-tag"></i>' + escapeHtml(s.family) + '</div>' : ''}
+                        <div class="description-preview">${escapeHtml(preview)}</div>
+                        ${s.habitat ? '<div class="habitat"><i class="fa-solid fa-tree"></i>' + escapeHtml(s.habitat) + '</div>' : ''}
+                        <div class="detail-btn"><i class="fa-solid fa-circle-info me-1"></i>查看详情</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // ========== 详情视图 ==========
+
+    function showDetail(id) {
+        const species = allSpecies.find(s => s.id === id);
+        if (!species) return;
+
+        // 记录滚动位置
+        window._lastScrollY = window.scrollY || window.pageYOffset || 0;
+
+        // 填充数据
+        document.getElementById('detailName').textContent = species.name_cn || '未知鸟类';
+        document.getElementById('detailScientific').innerHTML = '<i>' + escapeHtml(species.scientific_name || '') + '</i>';
+        document.getElementById('detailNameEn').textContent = species.name_en || '';
+
+        const status = (species.conservation_status || '').trim();
+        const tagEl = document.getElementById('detailTag');
+        if (status) {
+            tagEl.textContent = status;
+            tagEl.style.display = 'inline-block';
+            if (status.includes('一级')) {
+                tagEl.className = 'conservation-tag tag-level-1';
+            } else if (status.includes('二级')) {
+                tagEl.className = 'conservation-tag tag-level-2';
+            } else if (status.includes('三有')) {
+                tagEl.className = 'conservation-tag tag-level-3';
+            } else {
+                tagEl.className = 'conservation-tag tag-none';
+            }
+        } else {
+            tagEl.style.display = 'none';
+        }
+
+        // 基本信息网格
+        const infoItems = [
+            { label: '科属', value: species.family || '', icon: 'fa-tag' },
+            { label: '栖息地', value: species.habitat || '', icon: 'fa-tree' },
+            { label: '保护等级', value: status || '', icon: 'fa-shield-halved' },
+            { label: '学名', value: species.scientific_name || '', icon: 'fa-dna' },
+        ].filter(item => item.value);
+
+        document.getElementById('detailInfoGrid').innerHTML = infoItems.map(item => `
+            <div class="detail-info-item">
+                <div class="info-label"><i class="fa-solid ${item.icon}" style="margin-right:4px;color:var(--bv-primary)"></i>${item.label}</div>
+                <div class="info-value">${escapeHtml(item.value)}</div>
+            </div>
+        `).join('');
+
+        document.getElementById('detailDesc').textContent = species.description || '暂无详细介绍';
+
+        // 切换视图：列表左移淡出 → 详情从右淡入
+        const listView = document.getElementById('listView');
+        const detailView = document.getElementById('detailView');
+
+        listView.classList.add('slide-out');
+        setTimeout(() => {
+            listView.classList.add('hidden');
+            listView.classList.remove('slide-out');
+            detailView.classList.remove('hidden');
+            // 触发重绘以启动动画
+            detailView.offsetHeight;
+            detailView.classList.add('slide-in');
+            setTimeout(() => {
+                detailView.classList.remove('slide-in');
+            }, 10);
+            // 滚动到顶部
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 250);
+    }
+
+    function hideDetail() {
+        const listView = document.getElementById('listView');
+        const detailView = document.getElementById('detailView');
+
+        detailView.classList.add('slide-out');
+        setTimeout(() => {
+            detailView.classList.add('hidden');
+            detailView.classList.remove('slide-out');
+            listView.classList.remove('hidden');
+            // 触发重绘
+            listView.offsetHeight;
+            listView.classList.add('slide-in');
+            setTimeout(() => {
+                listView.classList.remove('slide-in');
+            }, 10);
+            // 恢复之前的滚动位置
+            if (window._lastScrollY !== undefined) {
+                window.scrollTo({ top: window._lastScrollY, behavior: 'smooth' });
+            }
+        }, 250);
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+</script>
+{% endblock %}

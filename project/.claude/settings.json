@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/d/python3.14.4/python.exe\" -m pip install -r \"/c/Users/Lenovo/Desktop/学习/2026暑期生产实习/实训项目/project/bird-vision/requirements.txt\")"
+    ]
+  }
+}

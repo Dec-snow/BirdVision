@@ -1,0 +1,25 @@
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 数据库
+*.db
+
+# 上传文件
+app/static/uploads/*
+
+# YOLO 模型权重
+models/yolo/*.pt
+
+# 本地 LLM 模型
+models/llm/*
+
+# 虚拟环境
+venv/
+.venv/
+
+# 环境变量
+.env
+
+# 数据集
+datasets/

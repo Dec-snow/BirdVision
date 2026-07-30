@@ -1,0 +1,607 @@
+{% extends 'base.html' %}
+
+{% block title %}数据统计 - BirdVision{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ========== 统计页面专属样式 ========== */
+
+    /* --- 页面标题 --- */
+    .page-stats .page-header {
+        text-align: center;
+        margin-bottom: 2.5rem;
+    }
+
+    .page-stats .page-header h2 {
+        font-weight: 800;
+        color: #1a1a2e;
+        font-size: 1.6rem;
+        letter-spacing: -0.3px;
+    }
+
+    .page-stats .page-header p {
+        color: #6c757d;
+        margin-top: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    /* --- 统计概览卡片 --- */
+    .page-stats .stat-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 1.5rem;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        height: 100%;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    .page-stats .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+    }
+
+    /* 彩色左边框 */
+    .page-stats .stat-card::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+
+    /* 绿色 - 识别总数 */
+    .page-stats .stat-card.card-green::before {
+        background: #2D8C4E;
+    }
+
+    /* 蓝色 - 识别物种数 */
+    .page-stats .stat-card.card-blue::before {
+        background: #0D6EFD;
+    }
+
+    /* 橙色 - 问答次数 */
+    .page-stats .stat-card.card-orange::before {
+        background: #F59E0B;
+    }
+
+    /* 紫色 - 今日识别数 */
+    .page-stats .stat-card.card-purple::before {
+        background: #8B5CF6;
+    }
+
+    .page-stats .stat-card .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .page-stats .stat-card.card-green .stat-icon {
+        background: #E8F5E9;
+        color: #2D8C4E;
+    }
+
+    .page-stats .stat-card.card-blue .stat-icon {
+        background: #E3F2FD;
+        color: #0D6EFD;
+    }
+
+    .page-stats .stat-card.card-orange .stat-icon {
+        background: #FEF3C7;
+        color: #F59E0B;
+    }
+
+    .page-stats .stat-card.card-purple .stat-icon {
+        background: #EDE9FE;
+        color: #8B5CF6;
+    }
+
+    .page-stats .stat-card .stat-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-bottom: 0.25rem;
+    }
+
+    /* 数字 + 趋势箭头容器 */
+    .page-stats .stat-card .stat-number-wrap {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    .page-stats .stat-card .stat-number {
+        font-size: 1.8rem;
+        font-weight: 700;
+        line-height: 1.2;
+        transition: color 0.2s ease;
+    }
+
+    /* 趋势箭头小图标 */
+    .page-stats .stat-card .stat-trend {
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
+    .page-stats .stat-card .stat-trend.trend-up {
+        color: #2D8C4E;
+    }
+
+    .page-stats .stat-card .stat-trend.trend-minus {
+        color: #adb5bd;
+    }
+
+    .page-stats .stat-card.card-green .stat-number {
+        color: #2D8C4E;
+    }
+
+    .page-stats .stat-card.card-blue .stat-number {
+        color: #0D6EFD;
+    }
+
+    .page-stats .stat-card.card-orange .stat-number {
+        color: #F59E0B;
+    }
+
+    .page-stats .stat-card.card-purple .stat-number {
+        color: #8B5CF6;
+    }
+
+    /* hover 时数字颜色加深 */
+    .page-stats .stat-card.card-green:hover .stat-number { color: #1B5E20; }
+    .page-stats .stat-card.card-blue:hover .stat-number { color: #084298; }
+    .page-stats .stat-card.card-orange:hover .stat-number { color: #B45309; }
+    .page-stats .stat-card.card-purple:hover .stat-number { color: #6D28D9; }
+
+    /* --- 图表容器 --- */
+    .page-stats .chart-container {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 1.5rem;
+        height: 100%;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    .page-stats .chart-container h5 {
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #E8F5E9;
+    }
+
+    .page-stats .chart-box {
+        width: 100%;
+        height: 350px;
+    }
+
+    /* 图表底部时间戳 */
+    .page-stats .chart-timestamp {
+        text-align: center;
+        font-size: 0.78rem;
+        color: #adb5bd;
+        margin-top: 0.75rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid #f0f0f0;
+    }
+
+    /* 图表空状态样式 */
+    .page-stats .chart-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #adb5bd;
+    }
+
+    .page-stats .chart-empty-state i {
+        font-size: 2.5rem;
+        margin-bottom: 0.75rem;
+        color: #c8e6c9;
+    }
+
+    .page-stats .chart-empty-state p {
+        font-size: 0.9rem;
+        margin: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-stats">
+
+    <!-- ========== 页面标题 ========== -->
+    <div class="page-header">
+        <h2><i class="fa-solid fa-chart-pie me-2" style="color:#2D8C4E;"></i>数据统计</h2>
+        <p>识别数据可视化分析，掌握鸟类识别趋势与分布</p>
+    </div>
+
+    <!-- ========== 顶部统计卡片 ========== -->
+    <div class="row g-4 mb-4">
+        <!-- 识别总数 - 绿色 -->
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-green">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </div>
+                <div class="stat-label">识别总数</div>
+                <div class="stat-number-wrap">
+                    <div class="stat-number" id="statTotal">0</div>
+                    <!-- 静态趋势箭头（视觉装饰） -->
+                    <span class="stat-trend trend-up"><i class="fa-solid fa-arrow-up"></i></span>
+                </div>
+            </div>
+        </div>
+        <!-- 识别物种数 - 蓝色 -->
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-blue">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-feather"></i>
+                </div>
+                <div class="stat-label">识别物种数</div>
+                <div class="stat-number-wrap">
+                    <div class="stat-number" id="statSpecies">0</div>
+                    <!-- 静态趋势箭头 -->
+                    <span class="stat-trend trend-up"><i class="fa-solid fa-arrow-up"></i></span>
+                </div>
+            </div>
+        </div>
+        <!-- 问答次数 - 橙色 -->
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-orange">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-comments"></i>
+                </div>
+                <div class="stat-label">问答次数</div>
+                <div class="stat-number-wrap">
+                    <div class="stat-number" id="statChat">0</div>
+                    <!-- 静态趋势箭头 -->
+                    <span class="stat-trend trend-up"><i class="fa-solid fa-arrow-up"></i></span>
+                </div>
+            </div>
+        </div>
+        <!-- 今日识别数 - 紫色 -->
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-purple">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-calendar-day"></i>
+                </div>
+                <div class="stat-label">今日识别数</div>
+                <div class="stat-number-wrap">
+                    <div class="stat-number" id="statToday">0</div>
+                    <!-- 今日用横线表示持平 -->
+                    <span class="stat-trend trend-minus"><i class="fa-solid fa-minus"></i></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 图表区域 ========== -->
+    <div class="row g-4">
+        <!-- 物种识别分布 - 饼图 -->
+        <div class="col-md-6">
+            <div class="chart-container">
+                <h5><i class="fa-solid fa-chart-pie me-2" style="color:#2D8C4E;"></i>物种识别分布</h5>
+                <div class="chart-box" id="pieChart"></div>
+                <!-- 图表底部时间戳 -->
+                <div class="chart-timestamp" id="pieTimestamp"></div>
+            </div>
+        </div>
+        <!-- 近7天识别趋势 - 折线图 -->
+        <div class="col-md-6">
+            <div class="chart-container">
+                <h5><i class="fa-solid fa-chart-line me-2" style="color:#2D8C4E;"></i>近7天识别趋势</h5>
+                <div class="chart-box" id="lineChart"></div>
+                <!-- 图表底部时间戳 -->
+                <div class="chart-timestamp" id="lineTimestamp"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    /* ========== 统计卡片数据 ========== */
+    var statTotalEl = document.getElementById('statTotal');
+    var statSpeciesEl = document.getElementById('statSpecies');
+    var statChatEl = document.getElementById('statChat');
+    var statTodayEl = document.getElementById('statToday');
+
+    /* ========== 生成当前日期时间戳文案 ========== */
+    function getTimestampText() {
+        var now = new Date();
+        return '数据更新于 ' + now.getFullYear() + '年' +
+            (now.getMonth() + 1) + '月' + now.getDate() + '日';
+    }
+
+    /* ========== 数字滚动动画 ========== */
+    function animateNumber(el, target) {
+        var current = 0;
+        var step = Math.max(1, Math.ceil(target / 30));
+        var timer = setInterval(function () {
+            current += step;
+            if (current >= target) {
+                current = target;
+                clearInterval(timer);
+            }
+            el.textContent = current;
+        }, 30);
+    }
+
+    /* ========== 获取概览统计数据 ========== */
+    fetch('/api/stats/overview')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            var total = data.total_detections || 0;
+            var species = data.total_species || 0;
+            var chat = data.total_chats || 0;
+            var today = data.today_detections || 0;
+
+            animateNumber(statTotalEl, total);
+            animateNumber(statSpeciesEl, species);
+            animateNumber(statChatEl, chat);
+            animateNumber(statTodayEl, today);
+        })
+        .catch(function () {
+            /* 静默处理 */
+        });
+
+    /* ========== 设置图表时间戳 ========== */
+    var timestampText = getTimestampText();
+    document.getElementById('pieTimestamp').textContent = timestampText;
+    document.getElementById('lineTimestamp').textContent = timestampText;
+
+    /* ========== 绿色系配色方案 ========== */
+    var greenColors = [
+        '#1B5E20', '#2D8C4E', '#43A047', '#66BB6A',
+        '#81C784', '#A5D6A7', '#C8E6C9', '#E8F5E9',
+        '#388E3C', '#4CAF50'
+    ];
+
+    /* ========== 物种识别分布饼图 ========== */
+    var pieChart = echarts.init(document.getElementById('pieChart'));
+
+    fetch('/api/stats/species_distribution')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            var names = [];
+            var values = [];
+
+            if (data && data.names && data.names.length > 0) {
+                names = data.names;
+                values = data.counts;
+            } else {
+                /* 无数据时：绿色鸟图标 + 提示文案 */
+                pieChart.setOption({
+                    title: {
+                        text: '',
+                        subtext: '',
+                        left: 'center',
+                        top: 'center'
+                    },
+                    /* 无数据时隐藏图例和坐标轴 */
+                    series: [{
+                        type: 'pie',
+                        radius: ['0%', '0%'],
+                        label: { show: false },
+                        data: []
+                    }],
+                    /* 使用 graphic 组件绘制空状态提示 */
+                    graphic: [
+                        {
+                            type: 'text',
+                            left: 'center',
+                            top: 'center',
+                            style: {
+                                text: '\uf43a', /* Font Awesome dove 图标 Unicode（需要用实际图标方案替代） */
+                                font: '48px "Font Awesome 6 Free"',
+                                fill: '#c8e6c9',
+                                textAlign: 'center'
+                            }
+                        },
+                        {
+                            type: 'text',
+                            left: 'center',
+                            top: 'center',
+                            style: {
+                                text: '开始识别后查看分布',
+                                font: '14px sans-serif',
+                                fill: '#adb5bd',
+                                textAlign: 'center',
+                                y: 50
+                            }
+                        }
+                    ]
+                });
+
+                /* 降级方案：直接用 HTML 覆盖空状态 */
+                var pieBox = document.getElementById('pieChart');
+                var emptyDiv = document.createElement('div');
+                emptyDiv.className = 'chart-empty-state';
+                emptyDiv.innerHTML = '<i class="fa-solid fa-dove"></i><p>开始识别后查看分布</p>';
+                pieBox.style.position = 'relative';
+                pieBox.appendChild(emptyDiv);
+                return;
+            }
+
+            pieChart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: {c} 次 ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    right: '5%',
+                    top: 'center',
+                    textStyle: { fontSize: 12 }
+                },
+                series: [
+                    {
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        center: ['40%', '50%'],
+                        avoidLabelOverlap: true,
+                        itemStyle: {
+                            borderRadius: 6,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        label: {
+                            show: false,
+                            position: 'center'
+                        },
+                        emphasis: {
+                            label: {
+                                show: true,
+                                fontSize: 14,
+                                fontWeight: 'bold'
+                            }
+                        },
+                        labelLine: { show: false },
+                        data: names.map(function (name, i) {
+                            return {
+                                name: name,
+                                value: values[i],
+                                itemStyle: { color: greenColors[i % greenColors.length] }
+                            };
+                        })
+                    }
+                ]
+            });
+        })
+        .catch(function () {
+            pieChart.setOption({
+                title: {
+                    text: '数据加载失败',
+                    left: 'center',
+                    top: 'center',
+                    textStyle: { color: '#adb5bd', fontSize: 14 }
+                }
+            });
+        });
+
+    /* ========== 近7天识别趋势折线图 ========== */
+    var lineChart = echarts.init(document.getElementById('lineChart'));
+
+    fetch('/api/stats/daily_trend')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            var dates = [];
+            var counts = [];
+
+            if (data && data.dates && data.dates.length > 0) {
+                dates = data.dates;
+                counts = data.counts;
+            } else {
+                /* 无数据时：显示空状态提示 */
+                lineChart.setOption({
+                    series: [{
+                        type: 'line',
+                        data: []
+                    }],
+                    /* 隐藏坐标轴 */
+                    xAxis: { show: false },
+                    yAxis: { show: false },
+                    grid: { show: false }
+                });
+
+                /* 降级方案：直接用 HTML 覆盖空状态 */
+                var lineBox = document.getElementById('lineChart');
+                var emptyDiv = document.createElement('div');
+                emptyDiv.className = 'chart-empty-state';
+                emptyDiv.innerHTML = '<i class="fa-solid fa-chart-line"></i><p>开始识别后查看趋势</p>';
+                lineBox.style.position = 'relative';
+                lineBox.appendChild(emptyDiv);
+                return;
+            }
+
+            lineChart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: '{b}: {c} 次'
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    top: '10%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: dates,
+                    axisLine: { lineStyle: { color: '#e0e0e0' } },
+                    axisLabel: { color: '#6c757d' }
+                },
+                yAxis: {
+                    type: 'value',
+                    minInterval: 1,
+                    axisLine: { show: false },
+                    splitLine: { lineStyle: { color: '#f0f0f0' } },
+                    axisLabel: { color: '#6c757d' }
+                },
+                series: [
+                    {
+                        type: 'line',
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 8,
+                        lineStyle: {
+                            color: '#2D8C4E',
+                            width: 3
+                        },
+                        itemStyle: {
+                            color: '#2D8C4E',
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        areaStyle: {
+                            color: {
+                                type: 'linear',
+                                x: 0,
+                                y: 0,
+                                x2: 0,
+                                y2: 1,
+                                colorStops: [
+                                    { offset: 0, color: 'rgba(45, 140, 78, 0.3)' },
+                                    { offset: 1, color: 'rgba(45, 140, 78, 0.02)' }
+                                ]
+                            }
+                        },
+                        data: counts
+                    }
+                ]
+            });
+        })
+        .catch(function () {
+            lineChart.setOption({
+                title: {
+                    text: '数据加载失败',
+                    left: 'center',
+                    top: 'center',
+                    textStyle: { color: '#adb5bd', fontSize: 14 }
+                }
+            });
+        });
+
+    /* ========== 响应式处理 ========== */
+    window.addEventListener('resize', function () {
+        pieChart.resize();
+        lineChart.resize();
+    });
+})();
+</script>
+{% endblock %}

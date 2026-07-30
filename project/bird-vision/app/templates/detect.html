@@ -1,0 +1,1014 @@
+{% extends 'base.html' %}
+
+{% block title %}鸟类识别 - BirdVision{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ========== 识别页面专属样式 ========== */
+
+    /* --- 页面标题 --- */
+    .page-detect .page-header {
+        text-align: center;
+        margin-bottom: 2.5rem;
+    }
+
+    .page-detect .page-header h2 {
+        font-weight: 800;
+        color: #1a1a2e;
+        font-size: 1.6rem;
+        letter-spacing: -0.3px;
+    }
+
+    .page-detect .page-header p {
+        color: #6c757d;
+        margin-top: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    /* --- 上传区域 --- */
+    .page-detect .upload-zone {
+        border: 2px dashed #d4e8d4;
+        border-radius: 16px;
+        padding: 3rem 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        background: linear-gradient(135deg, #fafffe 0%, #f5f7f3 100%);
+        margin-bottom: 1.25rem;
+        position: relative;
+    }
+
+    .page-detect .upload-zone:hover {
+        border-color: #2D8C4E;
+        background: linear-gradient(135deg, #E8F5E9 0%, #f0f9f0 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(45,140,78,0.08);
+    }
+
+    .page-detect .upload-zone.drag-over {
+        border-color: #2D8C4E;
+        background: #C8E6C9;
+        transform: scale(1.01);
+    }
+
+    .page-detect .upload-zone i {
+        font-size: 2.8rem;
+        color: #2D8C4E;
+        margin-bottom: 1rem;
+    }
+
+    .page-detect .upload-zone p {
+        color: #495057;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+
+    .page-detect .upload-zone .upload-hint {
+        font-size: 0.82rem;
+        color: #adb5bd;
+    }
+
+    .page-detect .upload-zone input[type="file"] {
+        display: none;
+    }
+
+    /* --- 图片预览 --- */
+    .page-detect .preview-container {
+        display: none;
+        margin-bottom: 1.25rem;
+        position: relative;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid #e8e8e8;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
+    .page-detect .preview-container img {
+        width: 100%;
+        max-height: 300px;
+        object-fit: contain;
+        background: #f8f9fa;
+        display: block;
+    }
+
+    /* 重新选择小按钮 - 预览图片右上角 */
+    .page-detect .reselect-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        z-index: 2;
+        backdrop-filter: blur(4px);
+    }
+
+    .page-detect .reselect-btn:hover {
+        background: rgba(0, 0, 0, 0.8);
+        transform: scale(1.05);
+    }
+
+    /* --- 识别按钮 --- */
+    .page-detect .detect-btn {
+        width: 100%;
+        padding: 0.8rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2D8C4E, #43A047);
+        color: #ffffff;
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .page-detect .detect-btn:hover:not(:disabled) {
+        background: linear-gradient(135deg, #1B5E20, #2D8C4E);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(45, 140, 78, 0.35);
+    }
+
+    .page-detect .detect-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    /* --- 识别结果区域 --- */
+    .page-detect .result-section {
+        display: none;
+        animation: fadeInUp 0.5s ease;
+    }
+
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-detect .result-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-top: 1.25rem;
+        position: relative;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    /* 复制识别结果按钮 */
+    .page-detect .copy-result-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: #f8faf5;
+        color: #2D8C4E;
+        border: 1px solid #c8e6c9;
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .page-detect .copy-result-btn:hover {
+        background: #E8F5E9;
+        border-color: #2D8C4E;
+    }
+
+    .page-detect .result-bird-name {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #2D8C4E;
+        margin-bottom: 0.75rem;
+    }
+
+    /* 置信度进度条 */
+    .page-detect .confidence-bar {
+        height: 10px;
+        border-radius: 5px;
+        background: #e8e8e8;
+        margin-bottom: 1.25rem;
+        overflow: hidden;
+    }
+
+    .page-detect .confidence-fill {
+        height: 100%;
+        border-radius: 5px;
+        background: linear-gradient(90deg, #2D8C4E, #66BB6A);
+        transition: width 0.8s ease;
+    }
+
+    .page-detect .confidence-text {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-bottom: 0.25rem;
+    }
+
+    /* 物种信息卡片 */
+    .page-detect .species-info {
+        background: #f8faf5;
+        border-radius: 10px;
+        padding: 1.25rem;
+    }
+
+    .page-detect .species-info .info-row {
+        display: flex;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #e8e8e8;
+    }
+
+    .page-detect .species-info .info-row:last-child {
+        border-bottom: none;
+    }
+
+    .page-detect .species-info .info-label {
+        font-weight: 600;
+        color: #2D8C4E;
+        min-width: 80px;
+        flex-shrink: 0;
+    }
+
+    .page-detect .species-info .info-value {
+        color: #495057;
+    }
+
+    /* 濒危/一级保护 - 红色高亮标签 */
+    .page-detect .danger-tag {
+        display: inline-block;
+        background: #DC3545;
+        color: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-left: 6px;
+    }
+
+    /* --- 历史记录区域 --- */
+    .page-detect .history-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 1.25rem;
+        height: 100%;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    .page-detect .history-card h5 {
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #E8F5E9;
+    }
+
+    .page-detect .history-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.2s ease;
+    }
+
+    .page-detect .history-item:last-child {
+        border-bottom: none;
+    }
+
+    .page-detect .history-item:hover {
+        background: #fafffe;
+    }
+
+    .page-detect .history-thumb {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: #e8e8e8;
+        margin-right: 0.75rem;
+        flex-shrink: 0;
+    }
+
+    .page-detect .history-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .page-detect .history-info .history-name {
+        font-weight: 600;
+        color: #212529;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .page-detect .history-info .history-meta {
+        font-size: 0.8rem;
+        color: #adb5bd;
+    }
+
+    .page-detect .history-confidence {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #2D8C4E;
+        flex-shrink: 0;
+    }
+
+    /* 历史记录删除按钮 */
+    .page-detect .history-delete-btn {
+        background: none;
+        border: none;
+        color: #adb5bd;
+        cursor: pointer;
+        padding: 4px 6px;
+        font-size: 0.82rem;
+        transition: color 0.2s ease;
+        flex-shrink: 0;
+        margin-left: 6px;
+    }
+
+    .page-detect .history-delete-btn:hover {
+        color: #DC3545;
+    }
+
+    /* 清空历史按钮 */
+    .page-detect .clear-history-btn {
+        display: block;
+        width: 100%;
+        padding: 0.5rem;
+        margin-top: 0.5rem;
+        background: none;
+        color: #adb5bd;
+        border: 1px dashed #dee2e6;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .page-detect .clear-history-btn:hover {
+        color: #DC3545;
+        border-color: #DC3545;
+        background: #fff5f5;
+    }
+
+    .page-detect .view-more-btn {
+        display: block;
+        width: 100%;
+        padding: 0.6rem;
+        margin-top: 1rem;
+        background: #E8F5E9;
+        color: #2D8C4E;
+        border: none;
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        text-align: center;
+    }
+
+    .page-detect .view-more-btn:hover {
+        background: #C8E6C9;
+        color: #1B5E20;
+    }
+
+    /* --- 空状态 --- */
+    .page-detect .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: #adb5bd;
+    }
+
+    .page-detect .empty-state i {
+        font-size: 2rem;
+        margin-bottom: 0.75rem;
+        color: #c8e6c9;
+    }
+
+    .page-detect .empty-state p {
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    /* --- 识别结果下方：知识问答引导 --- */
+    .page-detect .qa-guide {
+        margin-top: 1.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px dashed #e0ebe0;
+    }
+    .page-detect .qa-guide-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        color: #1a4d2e;
+        font-size: 0.95rem;
+        margin-bottom: 0.85rem;
+    }
+    .page-detect .qa-guide-title i {
+        color: #2D8C4E;
+    }
+    .page-detect .qa-quick-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin-bottom: 0.9rem;
+    }
+    .page-detect .qa-quick-btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0.55rem 0.75rem;
+        background: #f1f8f2;
+        border: 1px solid #d6e8d6;
+        color: #2D6A4F;
+        border-radius: 10px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        text-align: left;
+        line-height: 1.35;
+        transition: all 0.2s ease;
+        white-space: normal;
+        word-break: break-word;
+    }
+    .page-detect .qa-quick-btn:hover {
+        background: #C8E6C9;
+        border-color: #2D8C4E;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(45,140,78,0.12);
+    }
+    .page-detect .qa-quick-btn i {
+        color: #52B788;
+        margin-right: 0.3rem;
+    }
+    .page-detect .qa-jump-btn {
+        display: block;
+        width: 100%;
+        padding: 0.75rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #2D8C4E 0%, #52B788 100%);
+        color: #fff;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 0.95rem;
+        transition: all 0.25s ease;
+        box-shadow: 0 4px 12px rgba(45,140,78,0.22);
+    }
+    .page-detect .qa-jump-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(45,140,78,0.32);
+    }
+    .page-detect .qa-jump-btn:active {
+        transform: translateY(0);
+    }
+    .page-detect .qa-jump-btn i {
+        margin-right: 0.4rem;
+    }
+
+    /* --- 左侧面板整体卡片 --- */
+    .page-detect .panel-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-detect">
+
+    <!-- ========== 页面标题 ========== -->
+    <div class="page-header">
+        <h2><i class="fa-solid fa-magnifying-glass me-2" style="color:#2D8C4E;"></i>鸟类识别</h2>
+        <p>上传鸟类图片，AI 将为您快速识别物种信息</p>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- ========== 左侧：上传与识别 ========== -->
+        <div class="col-md-6">
+            <div class="panel-card">
+                <!-- 上传区域 -->
+                <div class="upload-zone" id="uploadZone">
+                    <i class="fa-solid fa-cloud-arrow-up d-block"></i>
+                    <p>点击或拖拽图片到此处上传</p>
+                    <span class="upload-hint">支持 JPG / PNG / WEBP 格式，最大 16MB</span>
+                    <input type="file" id="fileInput" accept="image/*">
+                </div>
+
+                <!-- 图片预览（含重新选择按钮） -->
+                <div class="preview-container" id="previewContainer">
+                    <img id="previewImg" src="" alt="预览图片">
+                    <!-- 右上角重新选择小按钮 -->
+                    <button class="reselect-btn" id="reselectBtn" title="重新选择">
+                        <i class="fa-solid fa-rotate-right me-1"></i>重新选择
+                    </button>
+                </div>
+
+                <!-- 识别按钮 -->
+                <button class="detect-btn" id="detectBtn" disabled>
+                    <i class="fa-solid fa-wand-magic-sparkles me-2"></i>开始识别
+                </button>
+
+                <!-- 识别结果 -->
+                <div class="result-section" id="resultSection">
+                    <div class="result-card">
+                        <!-- 复制识别结果按钮 -->
+                        <button class="copy-result-btn" id="copyResultBtn" title="复制识别结果">
+                            <i class="fa-solid fa-copy me-1"></i>复制结果
+                        </button>
+                        <h4 class="result-bird-name" id="resultName">--</h4>
+                        <p class="confidence-text">置信度: <span id="confidenceText">0%</span></p>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" id="confidenceFill" style="width:0%"></div>
+                        </div>
+                        <div class="species-info" id="speciesInfo">
+                            <div class="info-row">
+                                <span class="info-label">科属</span>
+                                <span class="info-value" id="infoFamily">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">栖息地</span>
+                                <span class="info-value" id="infoHabitat">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">保护状态</span>
+                                <span class="info-value" id="infoStatus">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">简介</span>
+                                <span class="info-value" id="infoDesc">--</span>
+                            </div>
+                        </div>
+
+                        <!-- ===== 知识问答引导（识别 → 问答串联）===== -->
+                        <div class="qa-guide" id="qaGuide" style="display:none;">
+                            <div class="qa-guide-title">
+                                <i class="fa-solid fa-comment-dots"></i>
+                                <span>基于识别结果，您可能想了解：</span>
+                            </div>
+                            <div class="qa-quick-buttons" id="qaQuickButtons">
+                                <!-- 3 个一键追问按钮，动态注入 -->
+                            </div>
+                            <button class="qa-jump-btn" id="qaJumpBtn">
+                                <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                                进入知识问答继续围绕 <span id="qaJumpSpecies">——</span> 提问
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 右侧：识别历史 ========== -->
+        <div class="col-md-6">
+            <div class="history-card">
+                <h5><i class="fa-solid fa-clock-rotate-left me-2"></i>识别历史</h5>
+                <button class="clear-history-btn" id="clearHistoryBtn" title="清空所有历史记录" style="display:none;">
+                    <i class="fa-solid fa-trash-can me-1"></i>清空全部
+                </button>
+                <div id="historyList">
+                    <!-- 空状态：小鸟图标 + 友好文案 -->
+                    <div class="empty-state" id="emptyState">
+                        <i class="fa-solid fa-dove d-block"></i>
+                        <p>还没有识别记录，快去上传第一张鸟类照片吧</p>
+                    </div>
+                </div>
+                <a href="/stats" class="view-more-btn">
+                    <i class="fa-solid fa-chart-bar me-1"></i>查看更多统计
+                </a>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    /* ========== DOM 元素获取 ========== */
+    var uploadZone = document.getElementById('uploadZone');
+    var fileInput = document.getElementById('fileInput');
+    var previewContainer = document.getElementById('previewContainer');
+    var previewImg = document.getElementById('previewImg');
+    var detectBtn = document.getElementById('detectBtn');
+    var resultSection = document.getElementById('resultSection');
+    var historyList = document.getElementById('historyList');
+    var emptyState = document.getElementById('emptyState');
+    var reselectBtn = document.getElementById('reselectBtn');
+    var copyResultBtn = document.getElementById('copyResultBtn');
+    var clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    /* 知识问答引导相关 */
+    var qaGuide = document.getElementById('qaGuide');
+    var qaQuickButtons = document.getElementById('qaQuickButtons');
+    var qaJumpBtn = document.getElementById('qaJumpBtn');
+    var qaJumpSpecies = document.getElementById('qaJumpSpecies');
+
+    /* ========== 缓存最近一次识别结果（供快捷提问跳转用）========== */
+    var lastDetection = null;
+
+    /* ========== 上传区域事件 ========== */
+    var selectedFile = null;
+
+    /* ========== 上传区域事件 ========== */
+
+    /* 点击上传区域触发文件选择 */
+    uploadZone.addEventListener('click', function () {
+        fileInput.click();
+    });
+
+    /* 文件选择变化处理 */
+    fileInput.addEventListener('change', function () {
+        if (fileInput.files && fileInput.files[0]) {
+            handleFile(fileInput.files[0]);
+        }
+    });
+
+    /* 拖拽进入 */
+    uploadZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        uploadZone.classList.add('drag-over');
+    });
+
+    /* 拖拽离开 */
+    uploadZone.addEventListener('dragleave', function () {
+        uploadZone.classList.remove('drag-over');
+    });
+
+    /* 拖拽放下 */
+    uploadZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        uploadZone.classList.remove('drag-over');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    /* ========== 文件处理 ========== */
+    function handleFile(file) {
+        /* 检查文件类型 */
+        if (!file.type.startsWith('image/')) {
+            showToast('请选择图片文件', 'warning');
+            return;
+        }
+
+        selectedFile = file;
+
+        /* 图片预览 */
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            previewImg.src = e.target.result;
+            previewContainer.style.display = 'block';
+            uploadZone.style.display = 'none';
+            detectBtn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    /* ========== 重新选择按钮（替代点击图片重选） ========== */
+    reselectBtn.addEventListener('click', function (e) {
+        /* 阻止事件冒泡，避免触发预览容器点击 */
+        e.stopPropagation();
+        selectedFile = null;
+        fileInput.value = '';
+        previewContainer.style.display = 'none';
+        uploadZone.style.display = 'block';
+        detectBtn.disabled = true;
+        resultSection.style.display = 'none';
+    });
+
+    /* ========== 复制识别结果按钮 ========== */
+    copyResultBtn.addEventListener('click', function () {
+        var name = document.getElementById('resultName').textContent;
+        var confidence = document.getElementById('confidenceText').textContent;
+        var family = document.getElementById('infoFamily').textContent;
+        var habitat = document.getElementById('infoHabitat').textContent;
+        var status = document.getElementById('infoStatus').textContent;
+        var desc = document.getElementById('infoDesc').textContent;
+
+        var text = '【BirdVision 识别结果】\n' +
+            '物种: ' + name + '\n' +
+            '置信度: ' + confidence + '\n' +
+            '科属: ' + family + '\n' +
+            '栖息地: ' + habitat + '\n' +
+            '保护状态: ' + status + '\n' +
+            '简介: ' + desc;
+
+        /* 使用 Clipboard API 复制文本 */
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                showToast('识别结果已复制到剪贴板', 'success');
+            }).catch(function () {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    });
+
+    /* 降级复制方案 */
+    function fallbackCopy(text) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.cssText = 'position:fixed;left:-9999px;';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast('识别结果已复制到剪贴板', 'success');
+        } catch (e) {
+            showToast('复制失败，请手动选择复制', 'warning');
+        }
+        document.body.removeChild(textarea);
+    }
+
+    /* ========== 识别按钮点击 ========== */
+    detectBtn.addEventListener('click', function () {
+        if (!selectedFile) return;
+        startDetection();
+    });
+
+    /* ========== 开始识别 ========== */
+    function startDetection() {
+        detectBtn.disabled = true;
+        detectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>识别中...';
+        resultSection.style.display = 'none';
+
+        var formData = new FormData();
+        formData.append('image', selectedFile);
+
+        fetch('/api/detect', {
+            method: 'POST',
+            body: formData
+        })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('识别请求失败: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function (data) {
+            if (data.success) {
+                renderResult(data);
+                addHistoryItem(data, data.record_id);
+            } else {
+                showToast(data.message || '未检测到鸟类，请尝试其他图片', 'warning');
+            }
+        })
+        .catch(function (err) {
+            showToast('识别失败: ' + err.message, 'danger');
+        })
+        .finally(function () {
+            detectBtn.disabled = false;
+            detectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles me-2"></i>开始识别';
+        });
+    }
+
+    /* ========== 渲染识别结果 ========== */
+    function renderResult(data) {
+        var name = data.species || '未知鸟类';
+        /* API 返回 0-1 的置信度，转换为百分比 */
+        var confidence = (data.confidence || 0) * 100;
+        var info = data.species_info || {};
+
+        document.getElementById('resultName').textContent = name;
+        document.getElementById('confidenceText').textContent = confidence.toFixed(1) + '%';
+        document.getElementById('confidenceFill').style.width = confidence + '%';
+        document.getElementById('infoFamily').textContent = info.family || '--';
+        document.getElementById('infoHabitat').textContent = info.habitat || '--';
+
+        /* 保护状态：判断是否包含"濒危""一级"等关键字，是则用红色标签显示 */
+        var statusText = info.conservation_status || '--';
+        var statusEl = document.getElementById('infoStatus');
+        /* 清空之前可能存在的红色标签 */
+        statusEl.innerHTML = '';
+        if (statusText !== '--' && (statusText.indexOf('濒危') > -1 || statusText.indexOf('一级') > -1)) {
+            statusEl.innerHTML = escapeHtml(statusText) +
+                '<span class="danger-tag"><i class="fa-solid fa-triangle-exclamation me-1"></i>需关注</span>';
+        } else {
+            statusEl.textContent = statusText;
+        }
+
+        document.getElementById('infoDesc').textContent = info.description || '--';
+
+        resultSection.style.display = 'block';
+
+        /* ===== 识别结果 → 知识问答引导 ===== */
+        lastDetection = data;
+        renderQaGuide(name, data);
+    }
+
+    /* ========== 渲染知识问答引导按钮 ========== */
+    function renderQaGuide(speciesName, data) {
+        if (!qaGuide) return;
+        qaGuide.style.display = 'block';
+        qaJumpSpecies.textContent = speciesName;
+
+        /* 生成 3 个一键追问按钮（针对该物种的典型问题） */
+        var defaults = [
+            { icon: 'fa-location-dot',   text: speciesName + '多分布在哪里？' },
+            { icon: 'fa-shield-halved', text: '我们应该如何保护' + speciesName + '？' },
+            { icon: 'fa-utensils',      text: speciesName + '主要吃什么？' },
+        ];
+        /* 针对保护等级动态调整 */
+        var info = data.species_info || {};
+        var status = (info.conservation_status || '').toString();
+        if (status && (status.indexOf('濒危') > -1 || status.indexOf('一级') > -1 || status.indexOf('重点') > -1)) {
+            defaults[1] = { icon: 'fa-shield-heart', text: '为什么' + speciesName + '需要特别保护？' };
+        }
+        if (info.habitat && info.habitat !== '--') {
+            defaults[0] = { icon: 'fa-mountain-sun', text: speciesName + '喜欢什么样的栖息环境？' };
+        }
+
+        qaQuickButtons.innerHTML = '';
+        defaults.forEach(function (q, i) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'qa-quick-btn';
+            btn.innerHTML = '<i class="fa-solid ' + q.icon + '"></i>' + q.text;
+            btn.addEventListener('click', function () {
+                jumpToChat(speciesName, data, q.text);
+            });
+            qaQuickButtons.appendChild(btn);
+        });
+    }
+
+    /* ========== 跳转到知识问答页面 ========== */
+    function jumpToChat(speciesName, data, prefilledQuestion) {
+        /* 参数：context=物种名 & species_id=ID & ask=预置问题（可选） */
+        var params = [];
+        if (speciesName) params.push('context=' + encodeURIComponent(speciesName));
+        if (data && data.species_id) params.push('species_id=' + encodeURIComponent(data.species_id));
+        if (prefilledQuestion) params.push('ask=' + encodeURIComponent(prefilledQuestion));
+
+        var url = '/chat' + (params.length ? '?' + params.join('&') : '');
+        window.location.href = url;
+    }
+
+    /* 跳转按钮 */
+    if (qaJumpBtn) {
+        qaJumpBtn.addEventListener('click', function () {
+            if (!lastDetection) return;
+            jumpToChat(lastDetection.species, lastDetection, null);
+        });
+    }
+
+    /* ========== HTML 转义 ========== */
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /* ========== 添加历史记录 ========== */
+    function addHistoryItem(data, recordId) {
+        /* 隐藏空状态 */
+        if (emptyState) {
+            emptyState.style.display = 'none';
+        }
+        updateClearBtnVisibility();
+
+        var name = data.species || '未知鸟类';
+        var confidence = (data.confidence || 0) * 100;
+        var thumbUrl = '/static/' + (data.image_url || 'uploads/default.jpg');
+
+        var now = new Date();
+        var timeStr = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0');
+
+        var itemDiv = document.createElement('div');
+        itemDiv.className = 'history-item';
+        itemDiv.setAttribute('data-record-id', recordId || '');
+        itemDiv.innerHTML =
+            '<img class="history-thumb" src="' + thumbUrl + '" alt="缩略图">' +
+            '<div class="history-info">' +
+            '  <div class="history-name">' + name + '</div>' +
+            '  <div class="history-meta">' + timeStr + '</div>' +
+            '</div>' +
+            '<span class="history-confidence">' + confidence.toFixed(1) + '%</span>' +
+            '<button class="history-delete-btn" title="删除此记录" data-record-id="' + (recordId || 0) + '">' +
+            '  <i class="fa-solid fa-xmark"></i>' +
+            '</button>';
+
+        /* 插入到列表最前面 */
+        historyList.insertBefore(itemDiv, historyList.firstChild);
+    }
+
+    /* ========== 简易 Toast 提示 ========== */
+    function showToast(msg, type) {
+        var toastDiv = document.createElement('div');
+        toastDiv.style.cssText = 'position:fixed;top:80px;right:20px;z-index:9999;padding:0.75rem 1.25rem;' +
+            'border-radius:8px;color:#fff;font-size:0.9rem;opacity:0;transition:opacity 0.3s;';
+
+        var colors = {
+            success: '#2D8C4E',
+            warning: '#F59E0B',
+            danger: '#DC3545',
+            info: '#0D6EFD'
+        };
+        toastDiv.style.backgroundColor = colors[type] || colors.info;
+        toastDiv.textContent = msg;
+
+        document.body.appendChild(toastDiv);
+
+        /* 淡入 */
+        setTimeout(function () { toastDiv.style.opacity = '1'; }, 10);
+        /* 淡出并移除 */
+        setTimeout(function () {
+            toastDiv.style.opacity = '0';
+            setTimeout(function () { toastDiv.remove(); }, 300);
+        }, 2500);
+    }
+
+    /* ========== 删除单条记录（事件委托） ========== */
+    historyList.addEventListener('click', function (e) {
+        var btn = e.target.closest('.history-delete-btn');
+        if (!btn) return;
+        var recordId = btn.getAttribute('data-record-id');
+        if (!recordId || recordId === '0') return;
+        fetch('/api/detect/history/' + recordId, { method: 'DELETE' })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    var item = btn.closest('.history-item');
+                    if (item) item.remove();
+                    var items = historyList.querySelectorAll('.history-item');
+                    if (items.length === 0) {
+                        emptyState.style.display = 'block';
+                    }
+                    updateClearBtnVisibility();
+                    showToast('已删除', 'success');
+                }
+            })
+            .catch(function () {});
+    });
+
+    /* ========== 清空全部记录 ========== */
+    clearHistoryBtn.addEventListener('click', function () {
+        if (!confirm('确定要清空所有识别历史吗？清空后统计数据将同步更新。')) return;
+        fetch('/api/detect/history/clear', { method: 'DELETE' })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    /* 移除所有历史项 */
+                    var items = historyList.querySelectorAll('.history-item');
+                    items.forEach(function (item) { item.remove(); });
+                    emptyState.style.display = 'block';
+                    updateClearBtnVisibility();
+                    showToast('已清空全部记录', 'success');
+                }
+            })
+            .catch(function () {});
+    });
+
+    /* ========== 更新清空按钮可见性 ========== */
+    function updateClearBtnVisibility() {
+        var count = historyList.querySelectorAll('.history-item').length;
+        clearHistoryBtn.style.display = count > 0 ? 'block' : 'none';
+    }
+
+    /* ========== 页面加载时获取历史记录 ========== */
+    fetch('/api/detect/history')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            var records = data.records || [];
+            if (records.length > 0) {
+                emptyState.style.display = 'none';
+                updateClearBtnVisibility();
+                records.forEach(function (item) {
+                    var itemDiv = document.createElement('div');
+                    itemDiv.className = 'history-item';
+                    itemDiv.setAttribute('data-record-id', item.id || '');
+                    itemDiv.innerHTML =
+                        '<img class="history-thumb" src="/static/' + (item.image_path || '') + '" alt="缩略图">' +
+                        '<div class="history-info">' +
+                        '  <div class="history-name">' + (item.species_name || '--') + '</div>' +
+                        '  <div class="history-meta">' + (item.created_at || '--') + '</div>' +
+                        '</div>' +
+                        '<span class="history-confidence">' + ((item.confidence || 0) * 100).toFixed(1) + '%</span>' +
+                        '<button class="history-delete-btn" title="删除此记录" data-record-id="' + (item.id || 0) + '">' +
+                        '  <i class="fa-solid fa-xmark"></i>' +
+                        '</button>' ;
+                    historyList.insertBefore(itemDiv, emptyState.nextSibling);
+                });
+            }
+        })
+        .catch(function () {
+            /* 静默处理，保持空状态 */
+        });
+})();
+</script>
+{% endblock %}
