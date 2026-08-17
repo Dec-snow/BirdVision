@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """Flask 应用配置模块"""
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 # 项目根目录（本文件所在目录的绝对路径）
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -11,19 +14,15 @@ try:
     from dotenv import load_dotenv
     _env_path = os.path.join(basedir, '.env')
     if os.path.exists(_env_path):
-        load_dotenv(_env_path, override=True)
-        # override=True 确保每次启动都从 .env 重新加载，避免旧值残留
+        # 不传 override：已存在的系统环境变量优先级更高，与上方优先级约定一致
+        load_dotenv(_env_path)
+        logger.info("[配置] 已加载 .env 文件: %s", _env_path)
+    else:
+        logger.info("[配置] 未找到 .env 文件，使用系统环境变量或默认值")
+        logger.info("[配置] 可复制 .env.example → .env 并填入你的 API Key")
 except ImportError:
     # python-dotenv 未安装时静默跳过，仍可使用系统环境变量
-    pass
-
-# 打印当前 LLM 配置来源（方便排查）
-_env_source = os.path.join(basedir, '.env')
-if os.path.exists(_env_source):
-    print(f"[配置] 已加载 .env 文件: {_env_source}")
-else:
-    print(f"[配置] 未找到 .env 文件，使用系统环境变量或默认值")
-    print(f"[配置] 可复制 .env.example → .env 并填入你的 API Key")
+    logger.warning("[配置] python-dotenv 未安装，跳过 .env 文件加载")
 
 
 class Config:
@@ -95,6 +94,8 @@ class Config:
         'ollama': 'Ollama 本地',
     }
 
+    _KNOWN_PROVIDERS = frozenset(tuple(_PROVIDER_PRESETS) + ('openai_compatible',))
+
     @classmethod
     def get_llm_config(cls, provider=None):
         """
@@ -106,10 +107,19 @@ class Config:
 
         Returns:
             dict: {api_url, model_name, api_key, provider, label}
+
+        Raises:
+            ValueError: provider 不在已知列表时抛出
         """
         if provider is None:
             provider = cls.LLM_PROVIDER
         provider = provider.lower()
+
+        if provider not in cls._KNOWN_PROVIDERS:
+            raise ValueError(
+                f'未知的 LLM provider: {provider!r}，'
+                f'可选: ollama / deepseek / mimo / openai_compatible'
+            )
 
         # ----- Ollama 协议 -----
         if provider == 'ollama':
@@ -122,8 +132,6 @@ class Config:
             }
 
         # ----- OpenAI 兼容协议 -----
-        preset = cls._PROVIDER_PRESETS.get(provider, {})
-
         if provider == 'openai_compatible':
             if not cls.LLM_BASE_URL:
                 raise ValueError(
@@ -138,6 +146,7 @@ class Config:
             }
 
         # deepseek / mimo
+        preset = cls._PROVIDER_PRESETS[provider]
         base_url = (cls.LLM_BASE_URL or preset.get('base_url', '')).rstrip('/')
         return {
             'api_url': base_url + '/v1/chat/completions',
@@ -171,3 +180,11 @@ class Config:
                     'model': preset['model'],
                 })
         return available
+
+
+# 使用默认 SECRET_KEY 时给出安全提示（不阻止启动，仅提醒）
+if Config.SECRET_KEY == 'bird-vision-2026-summer':
+    logger.warning(
+        "SECRET_KEY 未通过环境变量配置，正在使用内置默认值；"
+        "生产环境请务必设置 SECRET_KEY！"
+    )

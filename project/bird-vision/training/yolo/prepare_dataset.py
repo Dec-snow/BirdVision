@@ -37,13 +37,10 @@
 import argparse
 import os
 import random
-import re
 import shutil
 import sys
 import time
-import urllib.parse
 import urllib.request
-from pathlib import Path
 
 # ============================================================
 # 项目路径
@@ -96,17 +93,26 @@ HEADERS = {
 # Unsplash 图片搜索与下载
 # ============================================================
 
-# Import hardcoded species URLs
-_spec_urls_path = os.path.join(os.path.dirname(__file__), 'species_urls.py')
+# 导入硬编码的图片 URL 映射（同目录模块，无论从哪个目录启动脚本均可找到）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    import importlib.util as _ilu
-    _spec = _ilu.spec_from_file_location('species_urls', _spec_urls_path)
-    _mod = _ilu.module_from_spec(_spec)
-    with open(_spec_urls_path, 'r', encoding='utf-8') as _f:
-        exec(compile(_f.read(), _spec_urls_path, 'exec'), _mod.__dict__)
-    SPECIES_IMAGE_URLS = _mod.SPECIES_IMAGE_URLS
-except Exception:
+    from species_urls import SPECIES_IMAGE_URLS
+except ImportError:
     SPECIES_IMAGE_URLS = {}
+
+
+_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png')
+
+
+def _list_images(directory):
+    """列出目录下的图片文件（绝对路径），目录不存在时返回空列表。"""
+    if not os.path.isdir(directory):
+        return []
+    return [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.lower().endswith(_IMAGE_EXTENSIONS)
+    ]
 
 
 def get_species_urls(name_cn, count=10):
@@ -172,13 +178,10 @@ def download_species_images(species_info, count=10):
     os.makedirs(species_raw_dir, exist_ok=True)
 
     # 检查已有图片数量
-    existing_images = [
-        f for f in os.listdir(species_raw_dir)
-        if f.lower().endswith(('.jpg', '.jpeg', '.png'))
-    ]
+    existing_images = _list_images(species_raw_dir)
     if len(existing_images) >= count:
         print(f"    [{name_cn}] 已有 {len(existing_images)} 张图片，跳过下载")
-        return [os.path.join(species_raw_dir, f) for f in existing_images]
+        return existing_images
 
     print(f"    [{name_cn}] 获取图片 URL...")
 
@@ -187,14 +190,19 @@ def download_species_images(species_info, count=10):
 
     if not urls:
         print(f"    [{name_cn}] 未找到图片 URL")
-        return [os.path.join(species_raw_dir, f) for f in existing_images]
+        return existing_images
 
     # 下载图片
     downloaded = list(existing_images)
-    max_index = max((int(f.split('_')[1].split('.')[0]) for f in existing_images if '_' in f), default=-1)
+    max_index = max(
+        (int(os.path.basename(f).split('_')[1].split('.')[0])
+         for f in existing_images
+         if '_' in os.path.basename(f)),
+        default=-1,
+    )
 
     for url in urls:
-        if len([f for f in downloaded if f.endswith(('.jpg', '.jpeg', '.png'))]) >= count:
+        if len(downloaded) >= count:
             break
 
         max_index += 1
@@ -215,8 +223,7 @@ def download_species_images(species_info, count=10):
             if os.path.exists(filepath):
                 os.remove(filepath)
 
-    result = [os.path.join(species_raw_dir, f) for f in os.listdir(species_raw_dir)
-              if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    result = _list_images(species_raw_dir)
     print(f"    [{name_cn}] 下载完成: {len(result)} 张图片")
     return result
 
@@ -250,15 +257,7 @@ def download_all_species(species_list, count=10, skip_download=False,
 
         if skip_download:
             # 跳过下载，使用已有图片
-            species_raw_dir = os.path.join(RAW_DIR, name_cn)
-            if os.path.exists(species_raw_dir):
-                images = [
-                    os.path.join(species_raw_dir, f)
-                    for f in os.listdir(species_raw_dir)
-                    if f.lower().endswith(('.jpg', '.jpeg', '.png'))
-                ]
-            else:
-                images = []
+            images = _list_images(os.path.join(RAW_DIR, name_cn))
             print(f"    [{name_cn}] 已有 {len(images)} 张图片")
         else:
             images = download_species_images(species, count=count)

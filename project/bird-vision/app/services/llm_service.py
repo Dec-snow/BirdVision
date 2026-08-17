@@ -4,13 +4,13 @@
 import base64
 import json
 import logging
-import os
 import re
 
 import requests
 
 from app import db
 from app.models import ChatRecord
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,12 @@ PROVIDER_LABELS = {
     'ollama': 'Ollama 本地',
     'openai_compatible': '自定义 API',
 }
+
+# ---- 请求超时（秒） ----
+_TIMEOUT_CHAT = 120            # 正常对话
+_TIMEOUT_OLLAMA_PROBE = 10     # Ollama 连接探测
+_TIMEOUT_OPENAI_PROBE = 15     # OpenAI 兼容协议连接探测
+_TIMEOUT_VISION = 60           # 视觉识别
 
 # ===== 【最高优先级·身份强制锚点】 =====
 # 放在 system_prompt 的最开头，让模型第一时间看到自己是谁。
@@ -100,11 +106,11 @@ class LLMService:
         初始化 LLM 服务。
 
         Args:
-            api_url:   完整的 API 端点地址
+            api_url:    完整的 API 端点地址
             model_name: 模型名称
-            api_key:   API Key（OpenAI 兼容接口必填）
-            provider:  ollama | deepseek | mimo | openai_compatible
-            **kwargs:  忽略额外字段（如 label）以兼容 Config.get_llm_config()
+            api_key:    API Key（OpenAI 兼容接口必填）
+            provider:   ollama | deepseek | mimo | openai_compatible
+            **kwargs:   忽略额外字段（如 label）以兼容 Config.get_llm_config()
         """
         self.api_url = api_url
         self.model_name = model_name
@@ -126,7 +132,6 @@ class LLMService:
         try:
             llm_config = app_config['_LLM_CONFIG']
         except KeyError:
-            from config import Config
             llm_config = Config.get_llm_config()
 
         return cls(**llm_config)
@@ -173,24 +178,23 @@ class LLMService:
         db_lines = []
         if species_info and isinstance(species_info, dict):
             mapping = [
-                ('info_family',   ['科属', 'family', '科']),
-                ('info_habitat',  ['栖息地', 'habitat']),
-                ('info_status',   ['保护状态', '保护等级', 'conservation_status']),
-                ('info_sci',      ['学名', 'scientific_name']),
-                ('info_en',       ['英文名', 'name_en']),
-                ('info_desc',     ['简介', 'description', '描述']),
+                ('科属',   ['family', '科']),
+                ('栖息地', ['habitat']),
+                ('保护状态', ['conservation_status', '保护等级']),
+                ('学名',   ['scientific_name']),
+                ('英文名', ['name_en']),
+                ('简介',   ['description', '描述']),
             ]
-            for key_cn, keys in mapping:
-                val = ''
-                for k in keys:
-                    v = species_info.get(k)
-                    if v and str(v).strip() and str(v).strip() != '——':
-                        val = str(v).strip()
-                        break
+            for label, keys in mapping:
+                val = next(
+                    (str(species_info[k]).strip()
+                     for k in keys
+                     if k in species_info
+                     and species_info.get(k)
+                     and str(species_info.get(k)).strip() != '——'),
+                    ''
+                )
                 if val:
-                    for k in keys[:3]:
-                        pass
-                    label = keys[0]
                     db_lines.append(f'【数据库·{label}】：{val}')
 
         db_block = ''
@@ -306,43 +310,85 @@ class LLMService:
         else:
             raw = self._call_openai_compatible(probe_messages, _probe=True)
 
+        label = PROVIDER_LABELS.get(self.provider, self.provider)
         if raw.get('success'):
             return {
                 'ok': True,
                 'error_type': None,
-                'message': f'{PROVIDER_LABELS.get(self.provider, self.provider)} 连接正常',
+                'message': f'{label} 连接正常',
             }
-
-        label = PROVIDER_LABELS.get(self.provider, self.provider)
-        msg = raw.get('reply', '连接失败')
-        # 把错误信息打磨得更友好、更具体
-        error_type = raw.get('error_type')
-        if error_type == 'auth':
-            user_msg = f'{label} 的 API Key 无效或已过期，请前往配置文件检查并更新。'
-        elif error_type == 'not_found':
-            if self.provider == 'ollama':
-                user_msg = f'{label} 未找到模型「{self.model_name}」，请先执行 `ollama pull {self.model_name}`。'
-            else:
-                user_msg = f'{label} 未找到模型「{self.model_name}」，请检查 API 地址和模型名称。'
-        elif error_type == 'connection':
-            if self.provider == 'ollama':
-                user_msg = f'无法连接到 {label}，请确认 Ollama 已启动（`ollama serve`）并正在监听 {self.api_url}。'
-            else:
-                user_msg = f'无法连接到 {label}，请检查网络连接或 API 地址是否正确。'
-        elif error_type == 'timeout':
-            user_msg = f'{label} 响应超时，请稍后重试。'
-        elif error_type == 'rate_limit':
-            user_msg = f'{label} 请求过于频繁（429），请稍后再试。'
-        elif error_type == 'server':
-            user_msg = f'{label} 服务端暂时不可用（5xx），请稍后重试。'
-        else:
-            user_msg = f'{label} 不可用：{msg}'
 
         return {
             'ok': False,
-            'error_type': error_type,
-            'message': user_msg,
+            'error_type': raw.get('error_type'),
+            'message': self._build_check_message(
+                raw.get('error_type'), raw.get('reply', '连接失败')
+            ),
         }
+
+    # ----------------------------------------------------------------
+    # 错误映射（统一 Ollama / OpenAI 兼容协议的异常与状态码处理）
+    # ----------------------------------------------------------------
+
+    def _translate_request_error(self, exc):
+        """将 requests 异常映射为 (error_type, 用户提示)。"""
+        if isinstance(exc, requests.ConnectionError):
+            if self.provider == 'ollama':
+                return 'connection', '本地 LLM 服务未启动，请安装 Ollama 并运行 `ollama serve` 后重试。'
+            return 'connection', 'AI 服务暂时不可用，请检查网络连接后重试。'
+        if isinstance(exc, requests.Timeout):
+            return 'timeout', 'AI 回复时间较长，请稍后再试。'
+        return 'connection', 'AI 服务连接异常，请检查网络后重试。'
+
+    def _map_http_status(self, status):
+        """将 HTTP 状态码映射为 error_type（Ollama 与 OpenAI 协议差异处理）。"""
+        if self.provider != 'ollama':
+            if status == 401:
+                return 'auth'
+            if status == 429:
+                return 'rate_limit'
+        if status == 404:
+            return 'not_found'
+        if status >= 500:
+            return 'server'
+        return 'unknown'
+
+    def _build_error_result(self, error_type):
+        """根据错误类型构造标准的失败结果 dict。"""
+        if error_type == 'not_found' and self.provider == 'ollama':
+            reply = '本地 LLM 服务未找到，请确认 Ollama 已启动且模型已拉取。'
+        elif error_type == 'auth':
+            reply = 'AI 服务认证失败，API Key 可能已过期，请检查配置。'
+        elif error_type == 'not_found':
+            reply = 'AI 服务未找到，请确认 API 地址和模型名称是否正确。'
+        elif error_type == 'rate_limit':
+            reply = 'AI 服务请求过于频繁，请稍后再试。'
+        elif error_type == 'server':
+            reply = 'AI 服务端暂时不可用，请稍后重试。'
+        else:
+            reply = 'AI 服务暂时不可用，请稍后重试。'
+        return {'success': False, 'reply': reply, 'error_type': error_type}
+
+    def _build_check_message(self, error_type, fallback_msg='连接失败'):
+        """根据错误类型生成健康检查的用户友好说明。"""
+        label = PROVIDER_LABELS.get(self.provider, self.provider)
+        if error_type == 'auth':
+            return f'{label} 的 API Key 无效或已过期，请前往配置文件检查并更新。'
+        if error_type == 'not_found':
+            if self.provider == 'ollama':
+                return f'{label} 未找到模型「{self.model_name}」，请先执行 `ollama pull {self.model_name}`。'
+            return f'{label} 未找到模型「{self.model_name}」，请检查 API 地址和模型名称。'
+        if error_type == 'connection':
+            if self.provider == 'ollama':
+                return f'无法连接到 {label}，请确认 Ollama 已启动（`ollama serve`）并正在监听 {self.api_url}。'
+            return f'无法连接到 {label}，请检查网络连接或 API 地址是否正确。'
+        if error_type == 'timeout':
+            return f'{label} 响应超时，请稍后重试。'
+        if error_type == 'rate_limit':
+            return f'{label} 请求过于频繁（429），请稍后再试。'
+        if error_type == 'server':
+            return f'{label} 服务端暂时不可用（5xx），请稍后重试。'
+        return f'{label} 不可用：{fallback_msg}'
 
     # ----------------------------------------------------------------
     # Ollama 协议
@@ -358,7 +404,7 @@ class LLMService:
         Returns:
             dict: {success, reply, error_type}
         """
-        timeout = 10 if _probe else 120
+        timeout = _TIMEOUT_OLLAMA_PROBE if _probe else _TIMEOUT_CHAT
         payload = {
             'model': self.model_name,
             'messages': messages,
@@ -367,51 +413,27 @@ class LLMService:
         try:
             resp = requests.post(self.api_url, json=payload, timeout=timeout)
             resp.raise_for_status()
-            content = resp.json().get('message', {}).get('content', '')
-            if not content:
-                return {'success': False, 'reply': '服务暂时无法回复。', 'error_type': 'unknown'}
-            return {'success': True, 'reply': content, 'error_type': None}
-        except requests.ConnectionError:
-            logger.warning("Ollama 连接失败: %s", self.api_url)
-            return {
-                'success': False,
-                'reply': '本地 LLM 服务未启动，请安装 Ollama 并运行 `ollama serve` 后重试。',
-                'error_type': 'connection',
-            }
-        except requests.Timeout:
-            logger.warning("Ollama 请求超时: %s", self.api_url)
-            return {
-                'success': False,
-                'reply': 'AI 回复时间较长，请稍后再试。',
-                'error_type': 'timeout',
-            }
         except requests.HTTPError as e:
-            status = e.response.status_code if e.response else 0
-            if status == 404:
-                return {
-                    'success': False,
-                    'reply': '本地 LLM 服务未找到，请确认 Ollama 已启动且模型已拉取。',
-                    'error_type': 'not_found',
-                }
-            if status >= 500:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务端暂时不可用，请稍后重试。',
-                    'error_type': 'server',
-                }
-            logger.error("Ollama HTTP 错误 [%s]: %s", status, e)
-            return {
-                'success': False,
-                'reply': 'AI 服务暂时不可用，请稍后重试。',
-                'error_type': 'unknown',
-            }
+            status = e.response.status_code if e.response is not None else 0
+            logger.warning("Ollama HTTP 错误 [%s]: %s", status, e)
+            return self._build_error_result(self._map_http_status(status))
         except requests.RequestException as e:
-            logger.error("Ollama 请求异常: %s", e)
-            return {
-                'success': False,
-                'reply': 'AI 服务连接异常，请检查网络后重试。',
-                'error_type': 'connection',
-            }
+            if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+                logger.warning("Ollama 请求异常: %s (%s)", e, self.api_url)
+            else:
+                logger.error("Ollama 请求异常: %s", e)
+            error_type, reply = self._translate_request_error(e)
+            return {'success': False, 'reply': reply, 'error_type': error_type}
+
+        try:
+            content = resp.json().get('message', {}).get('content', '')
+        except ValueError:
+            logger.error("Ollama 返回非 JSON 响应: %s", resp.text[:300])
+            return {'success': False, 'reply': 'AI 服务返回格式异常，请稍后重试。', 'error_type': 'unknown'}
+
+        if not content:
+            return {'success': False, 'reply': '服务暂时无法回复。', 'error_type': 'unknown'}
+        return {'success': True, 'reply': content, 'error_type': None}
 
     # ----------------------------------------------------------------
     # OpenAI 兼容协议（DeepSeek / MIMO / 其它）
@@ -431,7 +453,7 @@ class LLMService:
         if self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
 
-        timeout = 15 if _probe else 120
+        timeout = _TIMEOUT_OPENAI_PROBE if _probe else _TIMEOUT_CHAT
         payload = {
             'model': self.model_name,
             'messages': messages,
@@ -444,77 +466,28 @@ class LLMService:
             resp = requests.post(
                 self.api_url, json=payload, headers=headers, timeout=timeout
             )
-        except requests.ConnectionError:
-            logger.warning("%s 连接失败: %s", self.provider, self.api_url)
-            return {
-                'success': False,
-                'reply': 'AI 服务暂时不可用，请检查网络连接后重试。',
-                'error_type': 'connection',
-            }
-        except requests.Timeout:
-            logger.warning("%s 请求超时: %s", self.provider, self.api_url)
-            return {
-                'success': False,
-                'reply': 'AI 回复时间较长，请稍后再试。',
-                'error_type': 'timeout',
-            }
         except requests.RequestException as e:
-            logger.error("%s 请求异常: %s", self.provider, e)
-            return {
-                'success': False,
-                'reply': 'AI 服务连接异常，请检查网络后重试。',
-                'error_type': 'connection',
-            }
+            if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+                logger.warning("%s 请求异常: %s (%s)", self.provider, e, self.api_url)
+            else:
+                logger.error("%s 请求异常: %s", self.provider, e)
+            error_type, reply = self._translate_request_error(e)
+            return {'success': False, 'reply': reply, 'error_type': error_type}
 
         # 非 200 状态码处理
         if resp.status_code != 200:
             logger.error("%s HTTP %d: %s", self.provider, resp.status_code, resp.text[:500])
-            if resp.status_code == 401:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务认证失败，API Key 可能已过期，请检查配置。',
-                    'error_type': 'auth',
-                }
-            elif resp.status_code == 404:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务未找到，请确认 API 地址和模型名称是否正确。',
-                    'error_type': 'not_found',
-                }
-            elif resp.status_code == 429:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务请求过于频繁，请稍后再试。',
-                    'error_type': 'rate_limit',
-                }
-            elif resp.status_code >= 500:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务端暂时不可用，请稍后重试。',
-                    'error_type': 'server',
-                }
-            else:
-                return {
-                    'success': False,
-                    'reply': 'AI 服务暂时不可用，请稍后重试。',
-                    'error_type': 'unknown',
-                }
+            return self._build_error_result(self._map_http_status(resp.status_code))
 
         try:
             data = resp.json()
         except ValueError:
             logger.error("%s 返回非 JSON 响应: %s", self.provider, resp.text[:300])
-            return {
-                'success': False,
-                'reply': 'AI 服务返回格式异常，请稍后重试。',
-                'error_type': 'unknown',
-            }
+            return {'success': False, 'reply': 'AI 服务返回格式异常，请稍后重试。', 'error_type': 'unknown'}
 
         # 兼容推理模型：content 可能为空，需回退到 reasoning_content
         message_obj = data.get('choices', [{}])[0].get('message', {})
-        content = message_obj.get('content', '')
-        if not content:
-            content = message_obj.get('reasoning_content', '')
+        content = message_obj.get('content', '') or message_obj.get('reasoning_content', '')
 
         if not content:
             return {'success': False, 'reply': '服务暂时无法回复。', 'error_type': 'unknown'}
@@ -575,7 +548,7 @@ class LLMService:
         try:
             with open(image_path, 'rb') as f:
                 image_data = base64.b64encode(f.read()).decode('utf-8')
-        except Exception as e:
+        except OSError as e:
             logger.error("读取图片失败: %s", e)
             return {'success': False, 'error': '图片读取失败'}
 
@@ -593,7 +566,6 @@ class LLMService:
 
         # MiMo 经验证支持视觉，优先尝试
         try:
-            from config import Config
             mimo_cfg = Config.get_llm_config(provider='mimo')
             if mimo_cfg.get('api_key'):
                 vision_attempts.append({
@@ -619,7 +591,6 @@ class LLMService:
 
         # 尝试 DeepSeek
         try:
-            from config import Config
             ds_cfg = Config.get_llm_config(provider='deepseek')
             if ds_cfg.get('api_key'):
                 vision_attempts.append({
@@ -692,7 +663,7 @@ class LLMService:
         }
 
         try:
-            resp = requests.post(api_url, json=payload, headers=headers, timeout=60)
+            resp = requests.post(api_url, json=payload, headers=headers, timeout=_TIMEOUT_VISION)
         except requests.RequestException as e:
             logger.error("视觉模型请求异常: %s", e)
             return {'success': False, 'error': str(e)}

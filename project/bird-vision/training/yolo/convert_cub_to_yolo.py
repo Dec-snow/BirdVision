@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 
 # ===== 可配置参数 =====
@@ -40,7 +41,7 @@ def read_cub_file(filepath):
     返回行列表，每行是一个字符串列表
     """
     lines = []
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
             if line:
@@ -164,7 +165,6 @@ def convert_cub_to_yolo(cub_root=None, output_dir=None):
             shutil.copy2(src_img_path, dst_img_path)
 
             # 获取图片尺寸，计算归一化坐标
-            from PIL import Image
             with Image.open(src_img_path) as img:
                 img_w, img_h = img.size
 
@@ -184,7 +184,7 @@ def convert_cub_to_yolo(cub_root=None, output_dir=None):
             # 写入 YOLO 格式标签文件
             label_filename = f"{class_id}_{file_stem}.txt"
             label_path = os.path.join(output_dir, 'labels', split_name, label_filename)
-            with open(label_path, 'w') as f:
+            with open(label_path, 'w', encoding='utf-8') as f:
                 f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}\n")
 
             success_count += 1

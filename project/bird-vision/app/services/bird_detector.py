@@ -25,6 +25,15 @@ class BirdDetector:
     # COCO 数据集中 "bird" 类别的 ID
     COCO_BIRD_CLASS_ID = 14
 
+    # 允许上传的图片扩展名（安全校验白名单）
+    ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}
+
+    @staticmethod
+    def is_allowed_image(filename):
+        """校验文件扩展名是否在允许的图片类型内。"""
+        ext = os.path.splitext(filename or '')[1].lower()
+        return ext in BirdDetector.ALLOWED_IMAGE_EXTENSIONS
+
     def __init__(self, model_path):
         """
         初始化检测器，加载 YOLO 模型。
@@ -190,7 +199,14 @@ class BirdDetector:
                            file_storage.content_length, max_size)
             raise ValueError(f"文件大小超过限制（最大 {max_size // 1024 // 1024}MB）")
 
-        ext = os.path.splitext(file_storage.filename)[1] or '.jpg'
+        # 扩展名白名单校验（防止非图片文件写入上传目录）
+        filename = file_storage.filename or ''
+        ext = os.path.splitext(filename)[1].lower() or '.jpg'
+        if ext not in self.ALLOWED_IMAGE_EXTENSIONS:
+            raise ValueError(
+                f'不支持的图片格式 {ext or "(无扩展名)"}，'
+                f'仅支持 jpg/jpeg/png/webp/bmp/gif'
+            )
         filename = str(uuid.uuid4().hex) + ext
 
         upload_folder = current_app.config['UPLOAD_FOLDER']

@@ -23,3 +23,13 @@ venv/
 
 # 数据集
 datasets/
+
+# 训练产物
+runs/
+
+# 日志
+*.log
+
+# IDE
+.idea/
+.vscode/

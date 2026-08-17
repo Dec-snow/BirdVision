@@ -3,20 +3,98 @@
 
 import logging
 import os
-
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 from flask import Blueprint, current_app, jsonify, request
 
 from app import db
 from app.models import BirdSpecies, ChatRecord, DetectionRecord
 from app.services.bird_detector import BirdDetector
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, PROVIDER_LABELS
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 # 创建 API 蓝图，统一添加 /api 前缀
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# ---- 输入校验限制 ----
+MAX_MESSAGE_LENGTH = 2000           # 单条消息最大长度（字符）
+MAX_HISTORY_ITEMS = 20              # 对话历史最大条数
+MAX_HISTORY_CONTENT_LENGTH = 2000   # 历史消息单条最大长度（字符）
+_ALLOWED_HISTORY_ROLES = ('user', 'assistant')
+
+# LLM provider fallback 固定优先级（项目约束：deepseek → mimo → ollama）
+_FIXED_PROVIDER_PRIORITY = ['deepseek', 'mimo', 'ollama']
+
+
+# --------------------------------------------------
+# 通用辅助函数
+# --------------------------------------------------
+
+def _coerce_int(value):
+    """安全转换为 int，失败返回 None。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_history(history):
+    """校验并清理对话历史，返回安全的历史消息列表。"""
+    if not isinstance(history, list):
+        return []
+    sanitized = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = item.get('role')
+        content = item.get('content')
+        if role not in _ALLOWED_HISTORY_ROLES or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content:
+            continue
+        sanitized.append({'role': role, 'content': content[:MAX_HISTORY_CONTENT_LENGTH]})
+    return sanitized[-MAX_HISTORY_ITEMS:]
+
+
+def _build_provider_try_order(preferred, provider_ids):
+    """
+    构建 provider 尝试顺序：用户指定 > 固定优先级 > 其余可用。
+    """
+    try_order = []
+    if preferred and preferred in provider_ids:
+        try_order.append(preferred)
+    for pid in _FIXED_PROVIDER_PRIORITY:
+        if pid in provider_ids and pid not in try_order:
+            try_order.append(pid)
+    for pid in provider_ids:
+        if pid not in try_order:
+            try_order.append(pid)
+    return try_order
+
+
+def _resolve_species_context(species_id, species_name, species_info=None):
+    """
+    根据物种 ID / 名称解析物种信息（识别结果 → 问答串联）。
+
+    返回 (sp, species_name, species_info)，sp 为 BirdSpecies 实例或 None。
+    """
+    sp = None
+    sid = _coerce_int(species_id)
+    if sid:
+        sp = db.session.get(BirdSpecies, sid)
+        if sp:
+            species_info = sp.to_dict()
+            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
+    if not sp and species_name:
+        sp = _resolve_species_from_name(species_name)
+        if sp:
+            species_info = sp.to_dict()
+            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
+    return sp, species_name, species_info
 
 
 # --------------------------------------------------
@@ -40,24 +118,33 @@ def detect_bird():
     if not file or not file.filename:
         return jsonify({'success': False, 'message': '未收到图片文件'}), 400
 
+    if not BirdDetector.is_allowed_image(file.filename):
+        return jsonify({
+            'success': False,
+            'message': '不支持的图片格式，仅支持 jpg/jpeg/png/webp/bmp/gif',
+        }), 400
+
     try:
-        # 初始化检测器
+        # 初始化检测器并保存上传文件，得到相对路径
         detector = BirdDetector(current_app.config['YOLO_MODEL_PATH'])
-
-        # 保存上传文件，得到相对路径
         image_rel_path = detector.preprocess_image(file)
+    except ValueError as e:
+        logger.warning("上传文件校验失败: %s", e)
+        return jsonify({'success': False, 'message': str(e)}), 400
 
-        # 拼接绝对路径用于推理
-        upload_folder = current_app.config['UPLOAD_FOLDER']
-        filename = image_rel_path.replace('uploads/', '', 1)
-        image_abs_path = os.path.join(upload_folder, filename)
+    # 拼接绝对路径用于推理
+    image_abs_path = os.path.join(
+        current_app.config['UPLOAD_FOLDER'],
+        os.path.basename(image_rel_path),
+    )
 
-        if detector.model is None:
-            return jsonify({
-                'success': False,
-                'message': 'YOLO 模型加载失败，请检查 ultralytics 是否安装',
-            }), 200
+    if detector.model is None:
+        return jsonify({
+            'success': False,
+            'message': 'YOLO 模型加载失败，请检查 ultralytics 是否安装',
+        }), 200
 
+    try:
         # 第一级 + 第二级：YOLO 检测（自定义模型 → 预训练 bird 类）
         detections = detector.detect(image_abs_path)
 
@@ -67,34 +154,21 @@ def detect_bird():
         if detections:
             best = max(detections, key=lambda d: d['confidence'])
             # 如果是未知鸟类，或置信度低于阈值，尝试第三级 LLM 视觉识别
-            if (best.get('is_unknown') or 
-                best['class_name'] == '未知鸟类' or 
-                best['confidence'] < 0.5):  # 置信度低于50%时也用LLM确认
+            if (best.get('is_unknown') or best['class_name'] == '未知鸟类'
+                    or best['confidence'] < 0.5):  # 置信度低于50%时也用LLM确认
                 logger.info("YOLO 无法确定具体物种（置信度 %.2f%%），尝试 LLM 视觉识别...",
                             best['confidence'] * 100)
-                llm_result = _try_llm_identify(image_abs_path)
-                if llm_result and llm_result.get('success') and llm_result.get('is_bird'):
-                    best = {
-                        'class_name': llm_result['species_name'],
-                        'confidence': llm_result['confidence'],
-                        'bbox': best.get('bbox', [0, 0, 0, 0]),
-                    }
+                llm_best = _build_llm_detection(image_abs_path, best.get('bbox', [0, 0, 0, 0]))
+                if llm_best:
+                    best = llm_best
                     used_llm = True
-                    logger.info("LLM 视觉识别成功: %s (置信度 %.2f%%)",
-                                llm_result['species_name'], llm_result['confidence'] * 100)
         else:
             # YOLO 完全没检测到，也尝试一下 LLM 视觉识别
             logger.info("YOLO 未检测到鸟类，尝试 LLM 视觉识别...")
-            llm_result = _try_llm_identify(image_abs_path)
-            if llm_result and llm_result.get('success') and llm_result.get('is_bird'):
-                best = {
-                    'class_name': llm_result['species_name'],
-                    'confidence': llm_result['confidence'],
-                    'bbox': [0, 0, 0, 0],
-                }
+            llm_best = _build_llm_detection(image_abs_path, [0, 0, 0, 0])
+            if llm_best:
+                best = llm_best
                 used_llm = True
-                logger.info("LLM 视觉识别成功: %s (置信度 %.2f%%)",
-                            llm_result['species_name'], llm_result['confidence'] * 100)
 
         if not best:
             return jsonify({
@@ -113,15 +187,12 @@ def detect_bird():
         db.session.commit()
 
         # 查询物种详细信息（匹配 bird_species 表，优先中文名、再英文名、再别名）
-        species_info_raw = detector.get_species_info(best['class_name'])
-        species_info = None
+        species_info = detector.get_species_info(best['class_name'])
         species_id = None
-        if species_info_raw and isinstance(species_info_raw, dict):
-            species_info = species_info_raw
-            if species_info.get('id'):
-                species_id = species_info.get('id')
-            # 如果 detector 没匹配到 bird_species，再手动查一次（别名字典映射）
+        if isinstance(species_info, dict):
+            species_id = species_info.get('id')
         if not species_id:
+            # detector 未匹配到 bird_species 时，再走别名字典/模糊匹配兜底
             sp = _resolve_species_from_name(best['class_name'])
             if sp:
                 species_info = sp.to_dict()
@@ -140,28 +211,26 @@ def detect_bird():
             'species_id': species_id,
             'record_id': record.id,
             'used_llm': used_llm,
-            # 供前端串联知识问答页面使用
-            'qa_link': f'/chat?context={best["class_name"]}' + (f'&species_id={species_id}' if species_id else ''),
+            # 供前端串联知识问答页面使用（URL 编码，避免特殊字符破坏链接）
+            'qa_link': f'/chat?context={quote(best["class_name"])}'
+                       + (f'&species_id={species_id}' if species_id else ''),
         })
-    except Exception as e:
-        logger.error("鸟类识别接口异常: %s", e, exc_info=True)
-        return jsonify({'success': False, 'message': f'服务器处理异常: {str(e)}'}), 500
+    except Exception:
+        db.session.rollback()
+        logger.exception("鸟类识别接口异常")
+        return jsonify({'success': False, 'message': '服务器处理异常，请稍后重试'}), 500
 
 
 def _try_llm_identify(image_path):
     """
     尝试使用 LLM 视觉模型识别鸟类。
 
-    遍历所有可用的 LLM provider，优先使用支持视觉识别的模型。
-    MiMo 支持视觉识别，DeepSeek 的视觉模型接口格式不同，优先级调低。
+    遍历所有可用的 LLM provider，优先尝试支持视觉识别的 MiMo。
     """
-    from config import Config
-    from app.services.llm_service import LLMService
-
     providers = Config.list_available_providers()
     provider_ids = [p['id'] for p in providers]
 
-    # 优先尝试 mimo（支持视觉识别）
+    # 优先尝试 mimo（经验证支持视觉识别）
     if 'mimo' in provider_ids:
         provider_ids.remove('mimo')
         provider_ids.insert(0, 'mimo')
@@ -178,6 +247,20 @@ def _try_llm_identify(image_path):
             continue
 
     return None
+
+
+def _build_llm_detection(image_path, fallback_bbox):
+    """尝试 LLM 视觉识别；成功且确认是鸟时返回检测结果 dict，否则返回 None。"""
+    llm_result = _try_llm_identify(image_path)
+    if not (llm_result and llm_result.get('success') and llm_result.get('is_bird')):
+        return None
+    logger.info("LLM 视觉识别成功: %s (置信度 %.2f%%)",
+                llm_result['species_name'], llm_result['confidence'] * 100)
+    return {
+        'class_name': llm_result['species_name'],
+        'confidence': llm_result['confidence'],
+        'bbox': fallback_bbox,
+    }
 
 
 # ============================================================
@@ -252,7 +335,7 @@ def _resolve_species_from_name(name):
             if like:
                 return like
         except Exception:
-            pass
+            logger.debug("ilike 模糊匹配不可用 (field=%s)", field, exc_info=True)
 
     # 4) 别名表反向：如果别名表的 value 是中文，key 可能是英文，遍历匹配
     for en, cn in _CUB_SPECIES_ALIASES.items():
@@ -292,23 +375,16 @@ def species_qa(species_id=None):
     message = (data.get('message') or '').strip()
     if not message:
         return jsonify({'success': False, 'message': '请输入问题'}), 400
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return jsonify({'success': False, 'message': f'问题过长（最多 {MAX_MESSAGE_LENGTH} 字）'}), 400
 
     # 物种解析： species_id 优先，否则 species_name 匹配
-    sid = species_id or data.get('species_id')
-    sp = None
     species_info = data.get('species_info')
     species_name = data.get('species_name') or data.get('context_name') or ''
+    sp, species_name, species_info = _resolve_species_context(
+        species_id or data.get('species_id'), species_name, species_info
+    )
 
-    if sid:
-        sp = BirdSpecies.query.get(sid)
-        if sp:
-            species_info = sp.to_dict()
-            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
-    if not sp and species_name:
-        sp = _resolve_species_from_name(species_name)
-        if sp:
-            species_info = sp.to_dict()
-            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
     # 没拿到 species_info 但有 species_name：构造最小上下文
     species_context = {
         'species_name': species_name or '该鸟类',
@@ -316,13 +392,18 @@ def species_qa(species_id=None):
         'species_info': species_info,
     }
 
-    history = data.get('history') or []
+    history = _sanitize_history(data.get('history'))
     provider_id = data.get('provider')
 
-    from config import Config
-    llm_cfg = Config.get_llm_config(provider=provider_id)
-    llm = LLMService(**llm_cfg)
-    result = llm.chat(message, history=history, species_context=species_context)
+    try:
+        llm_cfg = Config.get_llm_config(provider=provider_id)
+        llm = LLMService(**llm_cfg)
+        result = llm.chat(message, history=history, species_context=species_context)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except Exception:
+        logger.exception("物种问答调用失败 provider=%s", provider_id)
+        return jsonify({'success': False, 'message': 'AI 服务异常，请稍后重试'}), 500
 
     resp = {
         'success': result['success'],
@@ -364,7 +445,7 @@ def delete_detection_record(record_id):
 
     返回：JSON {success: bool, message: str}
     """
-    record = DetectionRecord.query.get(record_id)
+    record = db.session.get(DetectionRecord, record_id)
     if not record:
         return jsonify({'success': False, 'message': '记录不存在'}), 404
 
@@ -373,9 +454,9 @@ def delete_detection_record(record_id):
         db.session.commit()
         logger.info('删除识别记录: id=%d, species=%s', record_id, record.species_name)
         return jsonify({'success': True, 'message': '已删除'})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        logger.error('删除识别记录失败: %s', e, exc_info=True)
+        logger.exception('删除识别记录失败: id=%d', record_id)
         return jsonify({'success': False, 'message': '删除失败'}), 500
 
 
@@ -392,9 +473,9 @@ def clear_detection_history():
         db.session.commit()
         logger.info('清空识别记录: 共删除 %d 条', count)
         return jsonify({'success': True, 'message': f'已清空 {count} 条记录', 'deleted_count': count})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        logger.error('清空识别记录失败: %s', e, exc_info=True)
+        logger.exception('清空识别记录失败')
         return jsonify({'success': False, 'message': '清空失败'}), 500
 
 
@@ -409,7 +490,6 @@ def llm_providers():
 
     返回：JSON {providers: [{id, label, model}], default: str}
     """
-    from config import Config
     providers = Config.list_available_providers()
     return jsonify({
         'providers': providers,
@@ -436,9 +516,6 @@ def llm_health():
         'all_statuses': list      # 所有已检测 provider 的状态列表
     }
     """
-    from config import Config
-    from app.services.llm_service import PROVIDER_LABELS
-
     preferred = request.args.get('provider')
 
     available = Config.list_available_providers()
@@ -502,6 +579,23 @@ def llm_health():
     })
 
 
+def _chat_error_payload(reply, error_type='bad_request'):
+    """构造 /api/chat 的统一错误响应体。"""
+    return {
+        'reply': reply,
+        'provider': 'none',
+        'provider_label': '',
+        'model': '',
+        'fallback': False,
+        'fallback_from': None,
+        'fallback_from_label': None,
+        'success': False,
+        'error_type': error_type,
+        'species_name': None,
+        'species_id': None,
+    }
+
+
 @api_bp.route('/chat', methods=['POST'])
 def chat_reply():
     """
@@ -531,31 +625,17 @@ def chat_reply():
         'species_id':   int|None,   # 实际匹配到的 ID
     }
     """
-    data = request.get_json(silent=True)
-    if not data or 'message' not in data:
-        return jsonify({
-            'reply': '请输入有效的消息内容',
-            'provider': 'none',
-            'provider_label': '',
-            'model': '',
-            'fallback': False,
-            'fallback_from': None,
-            'fallback_from_label': None,
-            'success': False,
-            'error_type': 'bad_request',
-            'species_name': None,
-            'species_id': None,
-        }), 400
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify(_chat_error_payload('请输入有效的消息内容')), 400
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return jsonify(_chat_error_payload(f'消息过长（最多 {MAX_MESSAGE_LENGTH} 字）')), 400
 
-    from config import Config
-    from app.services.llm_service import PROVIDER_LABELS
-
-    message = data['message']
-    history = data.get('history', [])
-    preferred = data.get('provider', None)
+    history = _sanitize_history(data.get('history'))
+    preferred = data.get('provider')
 
     # ===== 物种上下文解析（识别 → 问答串联）=====
-    species_id_raw = data.get('species_id') or data.get('sid')
     species_name = (
         data.get('species_name')
         or data.get('species_context')
@@ -564,21 +644,9 @@ def chat_reply():
         or ''
     )
     species_info = data.get('species_info')
-
-    sp_obj = None
-    if species_id_raw:
-        try:
-            sp_obj = BirdSpecies.query.get(int(species_id_raw))
-        except Exception:
-            sp_obj = None
-        if sp_obj:
-            species_info = sp_obj.to_dict()
-            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
-    if not sp_obj and species_name:
-        sp_obj = _resolve_species_from_name(species_name)
-        if sp_obj:
-            species_info = sp_obj.to_dict()
-            species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
+    sp_obj, species_name, species_info = _resolve_species_context(
+        data.get('species_id') or data.get('sid'), species_name, species_info
+    )
 
     species_context = None
     if species_name or species_info:
@@ -590,24 +658,9 @@ def chat_reply():
     resolved_species_id = sp_obj.id if sp_obj else None
     resolved_species_name = species_name or None
 
-    # 构建尝试顺序：
-    # 项目约束：deepseek → mimo → ollama 的优先级顺序做 fallback
-    fixed_priority = ['deepseek', 'mimo', 'ollama']
-
     available = Config.list_available_providers()
     provider_ids = [p['id'] for p in available]
-
-    # 先放用户选的，然后按固定优先级放其余的，未配置的跳过
-    try_order = []
-    if preferred and preferred in provider_ids:
-        try_order.append(preferred)
-    for pid in fixed_priority:
-        if pid in provider_ids and pid not in try_order:
-            try_order.append(pid)
-    # 最后兜底放入其他未在优先级中的 provider
-    for pid in provider_ids:
-        if pid not in try_order:
-            try_order.append(pid)
+    try_order = _build_provider_try_order(preferred, provider_ids)
 
     if not try_order:
         return jsonify({
@@ -638,31 +691,23 @@ def chat_reply():
             llm = LLMService(**llm_cfg)
             result = llm.chat(message, history=history, species_context=species_context)
 
-            # 现在 result 就是结构化 dict，直接判断 success 字段
+            # result 是结构化 dict，直接判断 success 字段
             if result.get('success'):
                 is_fallback = prov != first_provider
-                fallback_from = first_provider if is_fallback else None
-                fallback_from_label = first_label if is_fallback else None
-                provider_label = llm_cfg.get(
-                    'label', PROVIDER_LABELS.get(prov, prov)
-                )
-
                 resp_data = {
                     'reply': result['reply'],
                     'provider': prov,
-                    'provider_label': provider_label,
+                    'provider_label': llm_cfg.get('label', PROVIDER_LABELS.get(prov, prov)),
                     'model': result.get('model', llm_cfg['model_name']),
                     'fallback': is_fallback,
-                    'fallback_from': fallback_from,
-                    'fallback_from_label': fallback_from_label,
+                    # 发生 fallback 时用单独字段告知，不拼接到 reply 正文（由前端独立展示）
+                    'fallback_from': first_provider if is_fallback else None,
+                    'fallback_from_label': first_label if is_fallback else None,
                     'success': True,
                     'error_type': None,
                     'species_name': resolved_species_name,
                     'species_id': resolved_species_id,
                 }
-
-                # 如果发生了 fallback，用单独字段告知，不再拼接到 reply 正文中
-                # （由前端独立展示，避免污染 LLM 的回复内容）
                 return jsonify(resp_data)
 
             # 这次 provider 返回服务错误，记录并继续下一个
@@ -675,8 +720,8 @@ def chat_reply():
                 prov, last_error_type, last_error_reply,
             )
 
-        except Exception as e:
-            logger.error("Provider %s 调用异常: %s", prov, e, exc_info=True)
+        except Exception:
+            logger.exception("Provider %s 调用异常", prov)
             last_error_reply = 'AI 服务连接异常，请检查网络后重试。'
             last_error_type = 'exception'
             last_provider = prov
@@ -835,7 +880,7 @@ def species_detail(bird_id):
 
     返回：JSON {success, species: dict} 或 404
     """
-    species = BirdSpecies.query.get(bird_id)
+    species = db.session.get(BirdSpecies, bird_id)
     if not species:
         return jsonify({'success': False, 'message': '物种不存在'}), 404
     return jsonify({'success': True, 'species': species.to_dict()})
