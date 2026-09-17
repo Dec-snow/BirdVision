@@ -923,15 +923,26 @@
         chatMessages.appendChild(wrapper);
     }
 
-    /* ========== 渲染 AI 回复气泡（支持 Markdown） ========== */
-    function renderAiMessage(content) {
+    /* ========== 渲染系统提示（fallback 通知等） ========== */
+    function renderSystemNotice(text) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'msg-system';
+        wrapper.innerHTML =
+            '<div class="sys-content" style="background:#FFF3CD;color:#856404;">' +
+            '  <i class="fa-solid fa-triangle-exclamation me-1"></i>' + escapeHtml(text) +
+            '</div>';
+        chatMessages.appendChild(wrapper);
+    }
+
+    /* ========== 渲染 AI 回复气泡（支持 Markdown + provider 标签） ========== */
+    function renderAiMessage(content, providerTag) {
         var wrapper = document.createElement('div');
         wrapper.className = 'msg-ai';
         wrapper.innerHTML =
             '<div class="msg-avatar"><i class="fa-solid fa-robot"></i></div>' +
             '<div class="msg-content-wrap">' +
             '  <div class="msg-bubble">' + renderMarkdown(content) + '</div>' +
-            '  <div class="msg-time">' + getTimeStr() + '</div>' +
+            '  <div class="msg-time">' + getTimeStr() + (providerTag || '') + '</div>' +
             '</div>';
         chatMessages.appendChild(wrapper);
     }
@@ -1026,7 +1037,27 @@
             var aiMsg = data.reply || '抱歉，暂时无法回答您的问题。';
             var ok = data.success !== false;  /* 缺省按成功算 */
 
-            renderAiMessage(aiMsg);
+            /* ===== Fallback 提示 =====
+             * 当用户选的 provider 不可用、自动切换到其他 provider 时，
+             * 在 AI 回复上方显示一条系统提示，避免用户误以为选中的模型在回答。
+             */
+            if (data.fallback && data.fallback_from) {
+                var fromLabel = data.fallback_from_label || data.fallback_from;
+                var toLabel   = data.provider_label     || data.provider;
+                renderSystemNotice(
+                    fromLabel + ' 暂时不可用，已自动切换到 ' + toLabel + ' 回复'
+                );
+            }
+
+            /* ===== 实际 provider 标签 =====
+             * 在 AI 消息时间戳旁显示实际回复的模型名称
+             */
+            var providerTag = '';
+            if (ok && data.provider_label) {
+                providerTag = ' · ' + data.provider_label;
+            }
+
+            renderAiMessage(aiMsg, providerTag);
 
             /* 只有成功才把 AI 消息加入 history（错误信息不参与上下文） */
             if (ok) {
