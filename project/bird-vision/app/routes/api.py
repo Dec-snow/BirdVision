@@ -9,7 +9,7 @@ from urllib.parse import quote
 from flask import Blueprint, current_app, jsonify, request
 
 from app import db
-from app.models import BirdSpecies, ChatRecord, DetectionRecord
+from app.models import BirdSpecies, ChatRecord, DetectionRecord, SiteSetting
 from app.services.bird_detector import BirdDetector
 from app.services.llm_service import LLMService, PROVIDER_LABELS
 from config import Config
@@ -95,6 +95,50 @@ def _resolve_species_context(species_id, species_name, species_info=None):
             species_info = sp.to_dict()
             species_name = species_info.get('name_cn') or species_info.get('name_en') or species_name
     return sp, species_name, species_info
+
+
+# --------------------------------------------------
+# 聊天次数限制辅助函数
+# --------------------------------------------------
+
+def _get_chat_reset_time():
+    """获取最后一次手动重置的时间戳，用于计算"今日"起始点。
+    返回 datetime 对象，若从未重置则返回 None。
+    """
+    raw = SiteSetting.get('chat_reset_at')
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_today_chat_count(ip):
+    """获取指定 IP 今日已用对话次数。
+    "今日"的起始点取 max(今日0点, 最后一次重置时间)，
+    这样管理员手动重置后，所有访客的今日次数会归零。
+    """
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    reset_at = _get_chat_reset_time()
+    if reset_at and reset_at > today_start:
+        start_time = reset_at
+    else:
+        start_time = today_start
+    return ChatRecord.query.filter(
+        ChatRecord.user_ip == ip,
+        ChatRecord.created_at >= start_time,
+    ).count()
+
+
+def _get_chat_daily_limit():
+    """从站点配置读取每日对话次数上限（默认 5）。"""
+    raw = SiteSetting.get('chat_daily_limit', '5')
+    try:
+        limit = int(raw)
+        return max(0, limit)
+    except (TypeError, ValueError):
+        return 5
 
 
 # --------------------------------------------------
@@ -606,9 +650,9 @@ def llm_health():
     })
 
 
-def _chat_error_payload(reply, error_type='bad_request'):
+def _chat_error_payload(reply, error_type='bad_request', remaining=None, daily_limit=None):
     """构造 /api/chat 的统一错误响应体。"""
-    return {
+    payload = {
         'reply': reply,
         'provider': 'none',
         'provider_label': '',
@@ -621,6 +665,11 @@ def _chat_error_payload(reply, error_type='bad_request'):
         'species_name': None,
         'species_id': None,
     }
+    if remaining is not None:
+        payload['remaining'] = remaining
+    if daily_limit is not None:
+        payload['daily_limit'] = daily_limit
+    return payload
 
 
 @api_bp.route('/chat', methods=['POST'])
@@ -658,6 +707,21 @@ def chat_reply():
         return jsonify(_chat_error_payload('请输入有效的消息内容')), 400
     if len(message) > MAX_MESSAGE_LENGTH:
         return jsonify(_chat_error_payload(f'消息过长（最多 {MAX_MESSAGE_LENGTH} 字）')), 400
+
+    # ===== 每日对话次数限制检查 =====
+    user_ip = request.remote_addr or 'unknown'
+    daily_limit = _get_chat_daily_limit()
+    used_count = _get_today_chat_count(user_ip)
+    remaining = max(0, daily_limit - used_count)
+
+    if daily_limit > 0 and remaining <= 0:
+        return jsonify(_chat_error_payload(
+            f'今日对话次数已达上限（{daily_limit} 次），请明天再来吧～\n'
+            f'如需调整限制，请联系站长。',
+            error_type='rate_limit',
+            remaining=0,
+            daily_limit=daily_limit,
+        )), 200
 
     history = _sanitize_history(data.get('history'))
     preferred = data.get('provider')
@@ -702,6 +766,8 @@ def chat_reply():
             'error_type': 'not_configured',
             'species_name': resolved_species_name,
             'species_id': resolved_species_id,
+            'remaining': remaining,
+            'daily_limit': daily_limit,
         }), 200
 
     first_provider = try_order[0]
@@ -721,19 +787,35 @@ def chat_reply():
             # result 是结构化 dict，直接判断 success 字段
             if result.get('success'):
                 is_fallback = prov != first_provider
+                # 保存对话记录（含 IP 用于次数统计）
+                try:
+                    record = ChatRecord(
+                        question=message,
+                        answer=result['reply'],
+                        model_name=result.get('model', llm_cfg.get('model_name', '')),
+                        user_ip=user_ip,
+                    )
+                    db.session.add(record)
+                    db.session.commit()
+                    used_count += 1
+                    remaining = max(0, daily_limit - used_count)
+                except Exception:
+                    db.session.rollback()
+                    logger.warning("保存 ChatRecord 失败，不影响对话流程")
                 resp_data = {
                     'reply': result['reply'],
                     'provider': prov,
                     'provider_label': llm_cfg.get('label', PROVIDER_LABELS.get(prov, prov)),
                     'model': result.get('model', llm_cfg['model_name']),
                     'fallback': is_fallback,
-                    # 发生 fallback 时用单独字段告知，不拼接到 reply 正文（由前端独立展示）
                     'fallback_from': first_provider if is_fallback else None,
                     'fallback_from_label': first_label if is_fallback else None,
                     'success': True,
                     'error_type': None,
                     'species_name': resolved_species_name,
                     'species_id': resolved_species_id,
+                    'remaining': remaining,
+                    'daily_limit': daily_limit,
                 }
                 return jsonify(resp_data)
 
@@ -794,7 +876,124 @@ def chat_reply():
         'error_type': last_error_type or 'unknown',
         'species_name': resolved_species_name,
         'species_id': resolved_species_id,
+        'remaining': remaining,
+        'daily_limit': daily_limit,
     }), 200
+
+
+# --------------------------------------------------
+# 聊天次数查询接口
+# --------------------------------------------------
+
+@api_bp.route('/chat/usage', methods=['GET'])
+def chat_usage():
+    """
+    获取当前 IP 的聊天使用情况。
+
+    返回：JSON {used, limit, remaining}
+    """
+    user_ip = request.remote_addr or 'unknown'
+    limit = _get_chat_daily_limit()
+    used = _get_today_chat_count(user_ip)
+    return jsonify({
+        'used': used,
+        'limit': limit,
+        'remaining': max(0, limit - used),
+    })
+
+
+# --------------------------------------------------
+# 后端管理接口
+# --------------------------------------------------
+
+@api_bp.route('/admin/settings', methods=['GET'])
+def admin_get_settings():
+    """获取所有站点配置。"""
+    settings = SiteSetting.query.all()
+    return jsonify({
+        'settings': [s.to_dict() for s in settings],
+    })
+
+
+@api_bp.route('/admin/chat-limit', methods=['POST'])
+def admin_set_chat_limit():
+    """
+    设置每日对话次数上限。
+
+    请求：JSON {limit: int}
+    返回：JSON {success, limit}
+    """
+    data = request.get_json(silent=True) or {}
+    raw = data.get('limit')
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'limit 必须为整数'}), 400
+    if limit < 0 or limit > 9999:
+        return jsonify({'success': False, 'message': 'limit 范围 0~9999（0=不限制）'}), 400
+
+    SiteSetting.set('chat_daily_limit', limit, '每 IP 每日对话次数上限')
+    logger.info("聊天次数限制已更新为 %d", limit)
+    return jsonify({'success': True, 'limit': limit})
+
+
+@api_bp.route('/admin/chat-reset', methods=['POST'])
+def admin_reset_chat_quota():
+    """
+    重置今日所有访客的对话次数。
+    通过记录重置时间戳实现，不删除历史聊天记录。
+
+    返回：JSON {success, reset_at, message}
+    """
+    now = datetime.now()
+    SiteSetting.set('chat_reset_at', now.isoformat(), '最后一次重置聊天次数的时间')
+    logger.info("管理员已重置今日所有访客的对话次数")
+    return jsonify({
+        'success': True,
+        'reset_at': now.strftime('%Y-%m-%d %H:%M:%S'),
+        'message': '今日对话次数已重置，所有访客的今日额度已恢复',
+    })
+
+
+@api_bp.route('/admin/chat-stats', methods=['GET'])
+def admin_chat_stats():
+    """
+    获取聊天次数管理相关的统计数据（供后台控制台使用）。
+
+    返回：JSON {
+        success,
+        daily_limit,
+        today_total_chats,
+        unique_visitors_today,
+        last_reset_at,
+    }
+    """
+    daily_limit = _get_chat_daily_limit()
+
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    reset_at = _get_chat_reset_time()
+    if reset_at and reset_at > today_start:
+        start_time = reset_at
+    else:
+        start_time = today_start
+
+    today_total = ChatRecord.query.filter(
+        ChatRecord.created_at >= start_time,
+    ).count()
+
+    unique_ips = db.session.query(
+        db.func.count(db.func.distinct(ChatRecord.user_ip))
+    ).filter(
+        ChatRecord.created_at >= start_time,
+    ).scalar() or 0
+
+    return jsonify({
+        'success': True,
+        'daily_limit': daily_limit,
+        'today_total_chats': today_total,
+        'unique_visitors_today': unique_ips,
+        'last_reset_at': reset_at.strftime('%Y-%m-%d %H:%M:%S') if reset_at else None,
+    })
 
 
 # --------------------------------------------------

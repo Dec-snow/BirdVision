@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后端控制台 - BirdVision</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/all.min.css') }}" rel="stylesheet">
+    <style>
+        :root {
+            --bv-primary: #2D8C4E;
+            --bv-primary-dark: #1B5E20;
+            --bv-primary-light: #E8F5E9;
+            --bv-text-dark: #1a1a2e;
+            --bv-text-muted: #6c757d;
+            --bv-bg-light: #f5f7f3;
+            --bv-border: #e8e8e8;
+            --accent-pink: #FFB7C5;
+            --accent-lavender: #B7A4E8;
+            --accent-sky: #87CEEB;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                         -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7f3 0%, #fdf6f0 50%, #f0f4ff 100%);
+            color: var(--bv-text-dark);
+            min-height: 100vh;
+            display: flex;
+            margin: 0;
+        }
+
+        /* ========== 侧边栏 ========== */
+        .sidebar {
+            width: 220px;
+            background: linear-gradient(180deg, #0a1f10 0%, #1B5E20 100%);
+            color: rgba(255,255,255,0.9);
+            padding: 1.5rem 0;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-profile {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding: 0 1rem;
+        }
+
+        .sidebar-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-pink), var(--accent-lavender));
+            margin: 0 auto 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .sidebar-profile .name {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .sidebar-profile .role {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.5);
+            margin-top: 2px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0.7rem 1.25rem;
+            color: rgba(255,255,255,0.6);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-nav a:hover {
+            color: rgba(255,255,255,0.95);
+            background: rgba(255,255,255,0.06);
+        }
+
+        .sidebar-nav a.active {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+            border-left-color: var(--accent-pink);
+        }
+
+        .sidebar-nav a i {
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.3);
+        }
+
+        /* ========== 主内容区 ========== */
+        .main-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .top-bar h1 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .top-bar .subtitle {
+            font-size: 0.82rem;
+            color: var(--bv-text-muted);
+            margin-top: 2px;
+        }
+
+        .top-bar .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .top-bar .badge-deploy {
+            background: #FFF3CD;
+            color: #856404;
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 999px;
+        }
+
+        .top-bar .btn-logout {
+            background: rgba(220, 53, 69, 0.08);
+            color: #DC3545;
+            border: 1px solid rgba(220, 53, 69, 0.2);
+            font-size: 0.82rem;
+            padding: 5px 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .top-bar .btn-logout:hover {
+            background: #DC3545;
+            color: #fff;
+        }
+
+        .content-area {
+            padding: 2rem;
+            flex: 1;
+        }
+
+        /* ========== 卡片 ========== */
+        .card-module {
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+            margin-bottom: 1.5rem;
+        }
+
+        .card-module h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 0 0 0.25rem;
+        }
+
+        .card-module .card-desc {
+            font-size: 0.85rem;
+            color: var(--bv-text-muted);
+            margin-bottom: 1.25rem;
+        }
+
+        /* ========== 聊天限制调整器 ========== */
+        .limit-control {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .limit-control .limit-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .limit-control .limit-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--bv-primary);
+            font-family: "Inter", sans-serif;
+            min-width: 48px;
+            text-align: center;
+        }
+
+        .limit-control .limit-label {
+            font-size: 0.85rem;
+            color: var(--bv-text-muted);
+        }
+
+        .limit-control .slider-wrap {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .limit-control input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--bv-primary-light);
+            border-radius: 999px;
+            outline: none;
+        }
+
+        .limit-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--bv-primary), #43A047);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            transition: transform 0.15s ease;
+        }
+
+        .limit-control input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        .limit-control input[type="range"]::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--bv-primary), #43A047);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+
+        .limit-control .btn-save {
+            background: linear-gradient(135deg, var(--bv-primary), #43A047);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .limit-control .btn-save:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(45, 140, 78, 0.3);
+        }
+
+        .limit-control .btn-save:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .limit-hint {
+            margin-top: 0.75rem;
+            font-size: 0.78rem;
+            color: var(--bv-text-muted);
+        }
+
+        .limit-input-wrap {
+            display: flex;
+            align-items: center;
+        }
+
+        .limit-input {
+            width: 80px;
+            padding: 8px 10px;
+            border: 1px solid var(--bv-border, #e0e0e0);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .limit-input:focus {
+            border-color: var(--bv-primary);
+        }
+
+        /* 聊天统计行 */
+        .chat-stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 1.25rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(45, 140, 78, 0.1);
+        }
+
+        .chat-stat-item {
+            text-align: center;
+        }
+
+        .chat-stat-num {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--bv-primary);
+            font-family: "Inter", sans-serif;
+        }
+
+        .chat-stat-label {
+            font-size: 0.75rem;
+            color: var(--bv-text-muted);
+            margin-top: 2px;
+        }
+
+        .section-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--bv-text-dark);
+            margin: 1rem 0 0.75rem;
+            display: flex;
+            align-items: center;
+        }
+
+        /* 重置额度 */
+        .reset-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 1rem;
+            background: #FFF8E1;
+            border-radius: 12px;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            flex-wrap: wrap;
+        }
+
+        .reset-desc {
+            flex: 1;
+            min-width: 200px;
+            font-size: 0.85rem;
+            color: var(--bv-text-dark);
+        }
+
+        .reset-time {
+            margin-top: 4px;
+            font-size: 0.75rem;
+            color: #B45309;
+        }
+
+        .btn-reset {
+            padding: 10px 18px;
+            background: linear-gradient(135deg, #F59E0B, #D97706);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-reset:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+
+        .btn-reset:active {
+            transform: translateY(0);
+        }
+
+        .btn-reset:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ========== 状态卡片 ========== */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 14px;
+            padding: 1.25rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        }
+
+        .stat-card .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            margin: 0 auto 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.6rem;
+            font-weight: 800;
+            font-family: "Inter", sans-serif;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.8rem;
+            color: var(--bv-text-muted);
+            margin-top: 2px;
+        }
+
+        .stat-card .stat-status {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-top: 0.5rem;
+        }
+
+        /* ========== Toast ========== */
+        .toast-box {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9999;
+        }
+
+        .toast-item {
+            background: #fff;
+            border-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+            font-size: 0.88rem;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: toastIn 0.3s ease;
+        }
+
+        .toast-item.success { border-left: 4px solid var(--bv-primary); }
+        .toast-item.error { border-left: 4px solid #DC3545; }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ========== 装饰元素 ========== */
+        .floating-petal {
+            position: fixed;
+            pointer-events: none;
+            opacity: 0.15;
+            z-index: 0;
+            animation: petalFloat 15s infinite ease-in-out;
+        }
+
+        @keyframes petalFloat {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(15deg); }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .content-area { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 装饰花瓣 -->
+    <div class="floating-petal" style="top:10%; left:80%; font-size:2rem; color:#FFB7C5;">
+        <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="floating-petal" style="top:60%; left:70%; font-size:1.5rem; color:#B7A4E8; animation-delay:3s;">
+        <i class="fa-solid fa-feather"></i>
+    </div>
+
+    <!-- ========== 侧边栏 ========== -->
+    <aside class="sidebar">
+        <div class="sidebar-profile">
+            <div class="sidebar-avatar">
+                <i class="fa-solid fa-feather-pointed"></i>
+            </div>
+            <div class="name">后端控制台</div>
+            <div class="role">站长后台</div>
+        </div>
+        <nav>
+            <ul class="sidebar-nav">
+                <li><a href="/admin" class="active"><i class="fa-solid fa-gauge"></i> 总览</a></li>
+                <li><a href="/"><i class="fa-solid fa-house"></i> 前台首页</a></li>
+                <li><a href="/chat"><i class="fa-solid fa-comments"></i> 知识问答</a></li>
+                <li><a href="/stats"><i class="fa-solid fa-chart-pie"></i> 数据统计</a></li>
+                <li><a href="/species"><i class="fa-solid fa-book"></i> 物种百科</a></li>
+            </ul>
+        </nav>
+        <div class="sidebar-footer">
+            BirdVision Admin v1.0
+        </div>
+    </aside>
+
+    <!-- ========== 主内容 ========== -->
+    <div class="main-wrap">
+        <header class="top-bar">
+            <div>
+                <h1>后端控制台</h1>
+                <div class="subtitle">管理站点配置，监控后端状态。</div>
+            </div>
+            <div class="top-actions">
+                <span class="badge-deploy">
+                    <i class="fa-solid fa-circle text-warning me-1" style="font-size:6px;"></i>
+                    运行中
+                </span>
+                <a href="/" class="btn-logout">
+                    <i class="fa-solid fa-right-from-bracket me-1"></i>返回前台
+                </a>
+            </div>
+        </header>
+
+        <div class="content-area">
+
+            <!-- ========== 站点状态 ========== -->
+            <h4 style="font-weight:700; margin-bottom:1rem;">
+                <i class="fa-solid fa-server me-2" style="color:var(--bv-primary);"></i>站点状态
+            </h4>
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background:var(--bv-primary-light); color:var(--bv-primary);">
+                        <i class="fa-solid fa-comments"></i>
+                    </div>
+                    <div class="stat-value" id="statTodayChats">--</div>
+                    <div class="stat-label">今日对话</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="background:#E3F2FD; color:#1976D2;">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <div class="stat-value" id="statTodayDetect">--</div>
+                    <div class="stat-label">今日识别</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="background:#FFF3E0; color:#F57C00;">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <div class="stat-value" id="statTotalChats">--</div>
+                    <div class="stat-label">总对话数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="background:#F3E5F5; color:#7B1FA2;">
+                        <i class="fa-solid fa-images"></i>
+                    </div>
+                    <div class="stat-value" id="statTotalDetect">--</div>
+                    <div class="stat-label">总识别数</div>
+                </div>
+            </div>
+
+            <!-- ========== 聊天次数管理 ========== -->
+            <div class="card-module">
+                <h3>
+                    <i class="fa-solid fa-sliders me-2" style="color:var(--bv-primary);"></i>
+                    聊天次数管理
+                </h3>
+                <p class="card-desc">设置每 IP 每日对话次数上限，以及手动重置今日额度。</p>
+
+                <!-- 统计概览 -->
+                <div class="chat-stats-row">
+                    <div class="chat-stat-item">
+                        <div class="chat-stat-num" id="csTodayTotal">--</div>
+                        <div class="chat-stat-label">今日对话总数</div>
+                    </div>
+                    <div class="chat-stat-item">
+                        <div class="chat-stat-num" id="csVisitors">--</div>
+                        <div class="chat-stat-label">今日访客数</div>
+                    </div>
+                    <div class="chat-stat-item">
+                        <div class="chat-stat-num" id="csLimit">--</div>
+                        <div class="chat-stat-label">每 IP 上限</div>
+                    </div>
+                </div>
+
+                <!-- 限额设置 -->
+                <div class="section-title">
+                    <i class="fa-solid fa-gear me-1"></i>每日对话上限
+                </div>
+                <div class="limit-control">
+                    <div class="limit-display">
+                        <span class="limit-number" id="limitDisplay">5</span>
+                        <span class="limit-label">次 / 日</span>
+                    </div>
+                    <div class="slider-wrap">
+                        <input type="range" id="limitSlider" min="0" max="100" value="5" step="1">
+                    </div>
+                    <div class="limit-input-wrap">
+                        <input type="number" id="limitInput" min="0" max="9999" value="5" class="limit-input">
+                    </div>
+                    <button class="btn-save" id="btnSaveLimit">
+                        <i class="fa-solid fa-check me-1"></i>保存
+                    </button>
+                </div>
+                <div class="limit-hint">
+                    <i class="fa-solid fa-circle-info me-1" style="color:var(--accent-lavender);"></i>
+                    设为 0 表示不限制。用户达到上限后无法继续对话，次日 0 点自动重置。
+                </div>
+
+                <!-- 重置额度 -->
+                <div class="section-title">
+                    <i class="fa-solid fa-rotate-right me-1"></i>重置今日额度
+                </div>
+                <div class="reset-section">
+                    <div class="reset-desc">
+                        <div>为所有访客重置今日对话次数，重置后所有人的今日额度恢复为上限值。</div>
+                        <div class="reset-time" id="lastResetTime">最后重置：从未重置</div>
+                    </div>
+                    <button class="btn-reset" id="btnResetQuota">
+                        <i class="fa-solid fa-arrow-rotate-right me-1"></i>重置今日额度
+                    </button>
+                </div>
+            </div>
+
+            <!-- ========== 快捷入口 ========== -->
+            <h4 style="font-weight:700; margin-bottom:1rem;">
+                <i class="fa-solid fa-bolt me-2" style="color:#F59E0B;"></i>快捷入口
+            </h4>
+            <div class="stat-grid">
+                <div class="stat-card" style="cursor:pointer; transition:transform 0.2s;" onclick="window.location.href='/chat'">
+                    <div class="stat-icon" style="background:var(--bv-primary-light); color:var(--bv-primary);">
+                        <i class="fa-solid fa-comments"></i>
+                    </div>
+                    <div class="stat-label" style="font-weight:600; color:var(--bv-text-dark);">知识问答</div>
+                    <div style="font-size:0.75rem; color:var(--bv-text-muted); margin-top:4px;">前往聊天助手</div>
+                </div>
+                <div class="stat-card" style="cursor:pointer; transition:transform 0.2s;" onclick="window.location.href='/detect'">
+                    <div class="stat-icon" style="background:#E3F2FD; color:#1976D2;">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <div class="stat-label" style="font-weight:600; color:var(--bv-text-dark);">鸟类识别</div>
+                    <div style="font-size:0.75rem; color:var(--bv-text-muted); margin-top:4px;">上传图片识别</div>
+                </div>
+                <div class="stat-card" style="cursor:pointer; transition:transform 0.2s;" onclick="window.location.href='/stats'">
+                    <div class="stat-icon" style="background:#F3E5F5; color:#7B1FA2;">
+                        <i class="fa-solid fa-chart-pie"></i>
+                    </div>
+                    <div class="stat-label" style="font-weight:600; color:var(--bv-text-dark);">数据统计</div>
+                    <div style="font-size:0.75rem; color:var(--bv-text-muted); margin-top:4px;">查看分析图表</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-box" id="toastBox"></div>
+
+    <script>
+    (function() {
+        var limitSlider = document.getElementById('limitSlider');
+        var limitInput = document.getElementById('limitInput');
+        var limitDisplay = document.getElementById('limitDisplay');
+        var btnSaveLimit = document.getElementById('btnSaveLimit');
+        var btnResetQuota = document.getElementById('btnResetQuota');
+        var lastResetTime = document.getElementById('lastResetTime');
+        var toastBox = document.getElementById('toastBox');
+
+        var currentLimit = 5;
+
+        function showToast(msg, type) {
+            var div = document.createElement('div');
+            div.className = 'toast-item ' + (type || 'success');
+            var icon = type === 'error' ? 'fa-circle-xmark' : 'fa-circle-check';
+            div.innerHTML = '<i class="fa-solid ' + icon + '" style="color:' +
+                (type === 'error' ? '#DC3545' : 'var(--bv-primary)') + ';"></i>' + msg;
+            toastBox.appendChild(div);
+            setTimeout(function() { div.remove(); }, 3000);
+        }
+
+        function updateLimitDisplay(val) {
+            var v = parseInt(val, 10);
+            if (isNaN(v) || v < 0) v = 0;
+            if (v > 9999) v = 9999;
+            currentLimit = v;
+            limitDisplay.textContent = v;
+            // 同步滑块（滑块最大100，超过100时滑块停在100）
+            if (v <= 100) {
+                limitSlider.value = v;
+            } else {
+                limitSlider.value = 100;
+            }
+            limitInput.value = v;
+        }
+
+        /* 滑块 → 数字 */
+        limitSlider.addEventListener('input', function() {
+            updateLimitDisplay(this.value);
+        });
+
+        /* 输入框 → 数字 */
+        limitInput.addEventListener('input', function() {
+            updateLimitDisplay(this.value);
+        });
+
+        /* 保存聊天次数限制 */
+        btnSaveLimit.addEventListener('click', function() {
+            var limit = currentLimit;
+            btnSaveLimit.disabled = true;
+            btnSaveLimit.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>保存中';
+
+            fetch('/api/admin/chat-limit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit: limit })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('每日对话上限已更新为 ' + data.limit + ' 次', 'success');
+                    document.getElementById('csLimit').textContent = data.limit;
+                } else {
+                    showToast(data.message || '保存失败', 'error');
+                }
+            })
+            .catch(function() {
+                showToast('网络错误，保存失败', 'error');
+            })
+            .finally(function() {
+                btnSaveLimit.disabled = false;
+                btnSaveLimit.innerHTML = '<i class="fa-solid fa-check me-1"></i>保存';
+            });
+        });
+
+        /* 重置今日额度 */
+        btnResetQuota.addEventListener('click', function() {
+            if (!confirm('确定要重置所有访客的今日对话次数吗？\n\n重置后，所有访客的今日对话额度将恢复为上限值。')) {
+                return;
+            }
+
+            btnResetQuota.disabled = true;
+            btnResetQuota.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>重置中';
+
+            fetch('/api/admin/chat-reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('今日对话次数已重置', 'success');
+                    lastResetTime.textContent = '最后重置：' + data.reset_at;
+                    // 刷新统计数据
+                    loadChatStats();
+                } else {
+                    showToast(data.message || '重置失败', 'error');
+                }
+            })
+            .catch(function() {
+                showToast('网络错误，重置失败', 'error');
+            })
+            .finally(function() {
+                btnResetQuota.disabled = false;
+                btnResetQuota.innerHTML = '<i class="fa-solid fa-arrow-rotate-right me-1"></i>重置今日额度';
+            });
+        });
+
+        /* 加载聊天统计数据 */
+        function loadChatStats() {
+            fetch('/api/admin/chat-stats')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        document.getElementById('csTodayTotal').textContent = data.today_total_chats;
+                        document.getElementById('csVisitors').textContent = data.unique_visitors_today;
+                        document.getElementById('csLimit').textContent = data.daily_limit;
+                        if (data.last_reset_at) {
+                            lastResetTime.textContent = '最后重置：' + data.last_reset_at;
+                        } else {
+                            lastResetTime.textContent = '最后重置：从未重置';
+                        }
+                    }
+                })
+                .catch(function() {});
+        }
+
+        /* 页面加载时获取当前配置和统计 */
+        fetch('/api/admin/settings')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var settings = data.settings || [];
+                settings.forEach(function(s) {
+                    if (s.key === 'chat_daily_limit') {
+                        var v = parseInt(s.value, 10);
+                        if (isNaN(v)) v = 5;
+                        updateLimitDisplay(v);
+                    }
+                });
+            })
+            .catch(function() {});
+
+        /* 加载聊天统计 */
+        loadChatStats();
+
+        fetch('/api/stats/overview')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                document.getElementById('statTodayChats').textContent = data.today_chats || 0;
+                document.getElementById('statTodayDetect').textContent = data.today_detections || 0;
+                document.getElementById('statTotalChats').textContent = data.total_chats || 0;
+                document.getElementById('statTotalDetect').textContent = data.total_detections || 0;
+            })
+            .catch(function() {});
+    })();
+    </script>
+</body>
+</html>
