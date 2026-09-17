@@ -395,22 +395,49 @@ def species_qa(species_id=None):
     history = _sanitize_history(data.get('history'))
     provider_id = data.get('provider')
 
-    try:
-        llm_cfg = Config.get_llm_config(provider=provider_id)
-        llm = LLMService(**llm_cfg)
-        result = llm.chat(message, history=history, species_context=species_context)
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception:
-        logger.exception("物种问答调用失败 provider=%s", provider_id)
-        return jsonify({'success': False, 'message': 'AI 服务异常，请稍后重试'}), 500
+    # 构建 provider 尝试顺序：用户指定的优先，失败后按固定优先级 fallback
+    available = Config.list_available_providers()
+    available_ids = [p['id'] for p in available]
+    try_order = _build_provider_try_order(provider_id, available_ids)
+
+    fallback_from = None
+    fallback_from_label = None
+    result = None
+
+    for i, pid in enumerate(try_order):
+        try:
+            llm_cfg = Config.get_llm_config(provider=pid)
+            llm = LLMService(**llm_cfg)
+            result = llm.chat(message, history=history, species_context=species_context)
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)}), 400
+        except Exception:
+            logger.exception("物种问答调用失败 provider=%s", pid)
+            result = {'success': False, 'reply': 'AI 服务异常，请稍后重试', 'error_type': 'server'}
+
+        if result.get('success'):
+            if i > 0:
+                fallback_from = provider_id
+                fallback_from_label = PROVIDER_LABELS.get(provider_id, provider_id)
+            break
+
+    if result is None:
+        result = {'success': False, 'reply': 'AI 服务异常，请稍后重试', 'error_type': 'server'}
+
+    actual_provider = result.get('provider', provider_id)
+    provider_label = PROVIDER_LABELS.get(actual_provider, actual_provider)
 
     resp = {
         'success': result['success'],
         'reply': result['reply'],
-        'provider': result.get('provider'),
+        'provider': actual_provider,
+        'provider_label': provider_label,
         'model': result.get('model'),
     }
+    if fallback_from:
+        resp['fallback'] = True
+        resp['fallback_from'] = fallback_from
+        resp['fallback_from_label'] = fallback_from_label
     if not result['success']:
         resp['error_type'] = result.get('error_type')
     # 把解析到的 species 信息一起回传，方便前端展示
